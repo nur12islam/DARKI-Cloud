@@ -24,7 +24,11 @@ export class StorageObjectRepository {
   }
 
   async setState(id: string, userId: string, state: string): Promise<void> {
-    await this.db.query(`UPDATE storage_objects SET state = $1, modified_at = now() WHERE id = $2 AND user_id = $3`, [state, id, userId]);
+    await this.db.query(
+      `UPDATE storage_objects
+          SET state = $1, modified_at = now(),
+              deleted_at = CASE WHEN $1 = 'deleted' THEN now() ELSE deleted_at END
+        WHERE id = $2 AND user_id = $3`, [state, id, userId]);
   }
 
   async setDeleted(id: string, userId: string): Promise<void> {
