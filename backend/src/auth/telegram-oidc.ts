@@ -27,13 +27,15 @@ export class TelegramOidcService {
   async start(): Promise<string> {
     const state = base64Url(randomBytes(32));
     const verifier = base64Url(randomBytes(32));
-    await db.query(`INSERT INTO telegram_login_attempts (state_hash, code_verifier, expires_at) VALUES ($1, $2, $3)`, [hash(state), verifier, new Date(Date.now() + ATTEMPT_TTL_MS)]);
+    const nonce = base64Url(randomBytes(32));
+    await db.query(`INSERT INTO telegram_login_attempts (state_hash, code_verifier, nonce_hash, expires_at) VALUES ($1, $2, $3, $4)`, [hash(state), verifier, hash(nonce), new Date(Date.now() + ATTEMPT_TTL_MS)]);
     const url = new URL(TELEGRAM_AUTH_URL);
     url.searchParams.set("client_id", this.config.clientId);
     url.searchParams.set("redirect_uri", this.config.redirectUri);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid profile");
     url.searchParams.set("state", state);
+    url.searchParams.set("nonce", nonce);
     url.searchParams.set("code_challenge", pkceChallenge(verifier));
     url.searchParams.set("code_challenge_method", "S256");
     return url.toString();
@@ -55,35 +57,39 @@ export class TelegramOidcService {
 
     const { payload } = await jwtVerify(tokens.id_token, jwks, { issuer: ISSUER, audience: this.config.clientId });
     if (typeof payload.sub !== "string" || !/^\d+$/.test(payload.sub)) throw new ServiceError("Telegram identity is invalid", "INVALID_AUTH", 401);
-    const claims = payload as typeof payload & { name?: string; given_name?: string; family_name?: string; preferred_username?: string };
+    const claims = payload as typeof payload & { name?: string; given_name?: string; family_name?: string; preferred_username?: string; nonce?: string };
+    const storedNonce = await db.query<{ nonceHash: string }>(`SELECT nonce_hash AS "nonceHash" FROM telegram_login_attempts WHERE id = $1`, [attempt.id]);
+    const nonce = claims.nonce;
+    if (!nonce || storedNonce.rows[0]?.nonceHash !== hash(nonce)) throw new ServiceError("Telegram login nonce validation failed", "INVALID_AUTH", 401);
     const displayName = claims.name?.trim() || [claims.given_name, claims.family_name].filter(Boolean).join(" ").trim() || claims.preferred_username || `Telegram ${payload.sub}`;
 
-    const user = await withTransaction(async (client) => {
+    const exchangeCode = base64Url(randomBytes(32));
+    const redirect = await withTransaction(async (client) => {
       const users = new UserRepository(client);
       const folders = new FolderRepository(client);
       const existing = await users.findByTelegramUserId(payload.sub!);
-      if (existing) return existing;
-      const created = await users.create(payload.sub!, displayName);
-      await folders.create(created.id, null, "My Drive");
-      return created;
+      const user = existing ?? await (async () => {
+        const created = await users.create(payload.sub!, displayName);
+        await folders.create(created.id, null, "My Drive");
+        return created;
+      })();
+      const consumed = await client.query(`UPDATE telegram_login_attempts SET used_at = now(), user_id = $1, exchange_code_hash = $2, expires_at = $3 WHERE id = $4 AND used_at IS NULL RETURNING id`, [user.id, hash(exchangeCode), new Date(Date.now() + EXCHANGE_TTL_MS), attempt.id]);
+      if (consumed.rowCount !== 1) throw new ServiceError("Telegram login session was already consumed", "INVALID_AUTH", 401);
+      return `${this.config.appRedirectUri}?code=${encodeURIComponent(exchangeCode)}`;
     });
-
-    const exchangeCode = base64Url(randomBytes(32));
-    await db.query(`UPDATE telegram_login_attempts SET used_at = now(), user_id = $1, exchange_code_hash = $2, expires_at = $3 WHERE id = $4 AND used_at IS NULL`, [user.id, hash(exchangeCode), new Date(Date.now() + EXCHANGE_TTL_MS), attempt.id]);
-    return `${this.config.appRedirectUri}?code=${encodeURIComponent(exchangeCode)}`;
+    return redirect;
   }
 
   async exchange(code: string): Promise<{ token: string; user: Awaited<ReturnType<AuthService["authenticateUser"]>> }> {
-    const user = await withTransaction(async (client) => {
+    return withTransaction(async (client) => {
       const result = await client.query<{ id: string; userId: string }>(`SELECT id, user_id AS "userId" FROM telegram_login_attempts WHERE exchange_code_hash = $1 AND used_at IS NOT NULL AND expires_at > now() FOR UPDATE`, [hash(code)]);
       const attempt = result.rows[0];
       if (!attempt) throw new ServiceError("Invalid or expired login code", "INVALID_AUTH", 401);
       await client.query(`UPDATE telegram_login_attempts SET exchange_code_hash = NULL, expires_at = now() WHERE id = $1`, [attempt.id]);
       const found = await new UserRepository(client).findById(attempt.userId);
       if (!found) throw new ServiceError("User not found", "INVALID_AUTH", 401);
-      return found;
+      const token = await this.auth.createSessionWithExecutor(client, found.id);
+      return { token, user: found };
     });
-    const token = await this.auth.createSession(user.id);
-    return { token, user };
   }
 }
