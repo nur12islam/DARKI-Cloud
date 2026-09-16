@@ -5,6 +5,12 @@ function optionalEnv(name: string): string | undefined {
   return value || undefined;
 }
 
+function requiredEnv(name: string): string {
+  const value = optionalEnv(name);
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
 function integerEnv(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isInteger(value) || value < 1) {
@@ -21,4 +27,14 @@ export const config = {
   databasePoolMax: integerEnv("DATABASE_POOL_MAX", 10),
   databaseConnectionTimeoutMs: integerEnv("DATABASE_CONNECTION_TIMEOUT_MS", 5000),
   databaseIdleTimeoutMs: integerEnv("DATABASE_IDLE_TIMEOUT_MS", 30000),
+  telegramBotToken: optionalEnv("TELEGRAM_BOT_TOKEN"),
+  sessionSecret: optionalEnv("SESSION_SECRET"),
 };
+
+export function requireTelegramBotToken(): string {
+  return config.telegramBotToken ?? requiredEnv("TELEGRAM_BOT_TOKEN");
+}
+
+export function requireSessionSecret(): string {
+  return config.sessionSecret ?? requiredEnv("SESSION_SECRET");
+}
