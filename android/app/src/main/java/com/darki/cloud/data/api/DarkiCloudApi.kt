@@ -20,6 +20,10 @@ class DarkiCloudApi(
     suspend fun exchangeTelegramLogin(code: String): JSONObject =
         postJson("/api/v1/auth/telegram/exchange", null, JSONObject().put("code", code))
 
+    suspend fun logout(token: String) {
+        postJson("/api/v1/auth/logout", token, JSONObject())
+    }
+
     suspend fun getMe(token: String): JSONObject = get("/api/v1/me", token)
     suspend fun getRootFolder(token: String): JSONObject = get("/api/v1/folders/root", token)
 
@@ -38,7 +42,7 @@ class DarkiCloudApi(
         withContext(Dispatchers.IO) {
             val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
             query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
-            execute(Request.Builder().url(urlBuilder.build()).get().apply { if (token != null) bearer(token) }.build())
+            execute(Request.Builder().url(urlBuilder.build()).get().apply { bearer(token) }.build())
         }
 
     private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject =
