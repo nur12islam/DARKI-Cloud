@@ -15,15 +15,16 @@
 └───────┬──────────┬───────┘
         │          │
         ▼          ▼
-┌────────────┐ ┌────────────────────┐
-│ Metadata DB│ │ Telegram Storage   │
-│            │ │ StorageProvider    │
-│ users      │ │ Bot API initially  │
-│ folders    │ └────────────────────┘
-│ files      │
-│ devices    │
-│ sync_ops   │
-└────────────┘
+┌──────────────┐ ┌────────────────────┐
+│ Metadata DB  │ │ Telegram Storage   │
+│              │ │ StorageProvider    │
+│ users        │ │ Bot API initially  │
+│ devices      │ └────────────────────┘
+│ folders      │
+│ files        │
+│ storage_objs │
+│ sync_changes │
+└──────────────┘
 ```
 
 The metadata database is the source of truth for the user's virtual filesystem. Telegram is a binary storage provider behind an abstraction layer.
@@ -59,63 +60,24 @@ Responsibilities:
 - Coordinate multi-device synchronization
 - Validate requests
 - Enforce provider capabilities and file-size limits
+- Write an append-only synchronization change record for every user-visible mutation
 
-## Metadata Model
+## Database Model
 
-### users
+The initial PostgreSQL schema is in `database/schema.sql`.
 
-- id
-- telegram_user_id
-- display_name
-- created_at
+Core entities:
 
-### devices
+- `users` — DARKI Cloud accounts
+- `devices` — installations and per-device sync cursors
+- `folders` — virtual directory tree
+- `files` — logical user-visible files
+- `storage_objects` — provider-neutral binary storage references
+- `sync_changes` — append-only change log and synchronization cursor source
 
-- id
-- user_id
-- device_name
-- platform
-- last_seen
-- sync_cursor
+The database does **not** store file bytes.
 
-### folders
-
-- id
-- user_id
-- parent_id
-- name
-- created_at
-- modified_at
-
-### files
-
-- id
-- user_id
-- folder_id
-- name
-- mime_type
-- size
-- checksum
-- storage_provider
-- storage_object_id
-- created_at
-- modified_at
-- deleted_at
-
-Provider-specific Telegram identifiers should be represented by the storage adapter rather than leaking Telegram-specific fields throughout the application model.
-
-### sync_operations
-
-- id
-- user_id
-- device_id
-- operation
-- object_id
-- state
-- created_at
-- completed_at
-
-A separate server-side change sequence/cursor will be used for synchronization. The exact schema can evolve during the database milestone.
+See `docs/DATA-MODEL.md` for invariants and lifecycle rules.
 
 ## Virtual Filesystem
 
@@ -131,7 +93,7 @@ My Drive
         └── IMG001.jpg
 ```
 
-The folder relationships are stored in the metadata database. Telegram storage references belong to file/object records and do not determine the user's folder hierarchy.
+The folder relationships are stored in the metadata database. Telegram storage references belong to storage-object records and do not determine the user's folder hierarchy.
 
 **Do not create one Telegram channel/chat per DARKI Cloud folder.** That would couple the logical filesystem to Telegram and make moves, renames, synchronization, and future provider changes unnecessarily difficult.
 
@@ -171,19 +133,21 @@ See `docs/TELEGRAM-STORAGE.md` for the Telegram-specific decision and limitation
 
 ## Sync Strategy
 
-The initial implementation uses a server-maintained monotonically increasing change sequence/cursor.
+The initial implementation uses a server-maintained monotonically increasing change sequence/cursor in `sync_changes`.
 
 Conceptually:
 
 ```text
 Device A → mutation → API → DB
                          ↓
-                    change log
+                  sync_changes
                          ↓
-Device B ← sync cursor ← API
+Device B ← cursor-based API ← DB
 ```
 
-Use idempotent operations where possible so retries do not duplicate files or metadata.
+A device only advances its local cursor after successfully applying the corresponding changes.
+
+Use idempotency keys for operations that could otherwise create duplicate objects when a network retry occurs.
 
 For GApps-free operation:
 
