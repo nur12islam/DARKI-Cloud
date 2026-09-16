@@ -17,6 +17,9 @@ class DarkiCloudViewModel(
     private val repository: CloudRepository,
     private val sessionStore: SessionStore,
 ) : ViewModel() {
+    val isAuthenticated: Boolean
+        get() = sessionStore.token != null
+
     private val root: Flow<FolderEntity?> =
         repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
 
@@ -34,9 +37,7 @@ class DarkiCloudViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error: Flow<String?> = _error
 
-    init {
-        refreshRoot()
-    }
+    init { refreshRoot() }
 
     fun refreshRoot() {
         val token = sessionStore.token ?: return
@@ -50,13 +51,11 @@ class DarkiCloudViewModel(
     }
 
     companion object {
-        fun factory(
-            repository: CloudRepository,
-            sessionStore: SessionStore,
-        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                DarkiCloudViewModel(repository, sessionStore) as T
-        }
+        fun factory(repository: CloudRepository, sessionStore: SessionStore): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    DarkiCloudViewModel(repository, sessionStore) as T
+            }
     }
 }
