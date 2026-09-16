@@ -1,5 +1,6 @@
 package com.darki.cloud
 
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -20,21 +21,11 @@ class DarkiCloudViewModel(
 ) : ViewModel() {
     private val _isAuthenticated = MutableStateFlow(sessionStore.token != null)
     val isAuthenticated: Flow<Boolean> = _isAuthenticated
-
-    private val root: Flow<FolderEntity?> =
-        repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
-
-    val folders: Flow<List<FolderEntity>> = root.flatMapLatest { rootFolder ->
-        rootFolder?.let { repository.observeFolders(it.id) } ?: flowOf(emptyList())
-    }
-
-    val files: Flow<List<FileEntity>> = root.flatMapLatest { rootFolder ->
-        rootFolder?.let { repository.observeFiles(it.id) } ?: flowOf(emptyList())
-    }
-
+    private val root: Flow<FolderEntity?> = repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
+    val folders: Flow<List<FolderEntity>> = root.flatMapLatest { rootFolder -> rootFolder?.let { repository.observeFolders(it.id) } ?: flowOf(emptyList()) }
+    val files: Flow<List<FileEntity>> = root.flatMapLatest { rootFolder -> rootFolder?.let { repository.observeFiles(it.id) } ?: flowOf(emptyList()) }
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: Flow<Boolean> = _isRefreshing
-
     private val _error = MutableStateFlow<String?>(null)
     val error: Flow<String?> = _error
 
@@ -50,6 +41,7 @@ class DarkiCloudViewModel(
                 sessionStore.userId = response.getJSONObject("user").getString("id")
                 val rootFolder = repository.loadRoot(token)
                 sessionStore.rootFolderId = rootFolder.id
+                ensureDeviceAndSync(token)
                 _isAuthenticated.value = true
             }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" }
         }
@@ -58,8 +50,7 @@ class DarkiCloudViewModel(
     fun logout() {
         val token = sessionStore.token
         viewModelScope.launch {
-            runCatching { repository.logout(token) }
-                .onFailure { _error.value = it.message ?: "Unable to contact server during logout" }
+            repository.logout(token)
             sessionStore.clear()
             _isAuthenticated.value = false
         }
@@ -70,24 +61,27 @@ class DarkiCloudViewModel(
         viewModelScope.launch {
             _isRefreshing.value = true
             _error.value = null
-            runCatching { repository.loadRoot(token) }
+            runCatching { ensureDeviceAndSync(token) }
                 .onFailure { error ->
                     if (error is DarkiCloudApiException && error.statusCode == 401) {
-                        sessionStore.clear()
-                        _isAuthenticated.value = false
+                        sessionStore.clear(); _isAuthenticated.value = false
                     }
-                    _error.value = error.message ?: "Unable to refresh cloud data"
+                    _error.value = error.message ?: "Unable to synchronize cloud data"
                 }
             _isRefreshing.value = false
         }
     }
 
+    private suspend fun ensureDeviceAndSync(token: String) {
+        val deviceId = sessionStore.deviceId ?: repository.registerDevice(token, "${Build.MANUFACTURER} ${Build.MODEL}", "Android ${Build.VERSION.RELEASE}").also { sessionStore.deviceId = it.id }.id
+        val nextCursor = repository.sync(token, deviceId, sessionStore.cursor)
+        sessionStore.cursor = nextCursor
+    }
+
     companion object {
-        fun factory(repository: CloudRepository, sessionStore: SessionStore): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    DarkiCloudViewModel(repository, sessionStore) as T
-            }
+        fun factory(repository: CloudRepository, sessionStore: SessionStore): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = DarkiCloudViewModel(repository, sessionStore) as T
+        }
     }
 }
