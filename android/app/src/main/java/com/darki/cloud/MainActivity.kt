@@ -1,9 +1,10 @@
 package com.darki.cloud
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,9 +27,11 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -50,53 +53,81 @@ import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDatabase
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
     private lateinit var sessionStore: SessionStore
     private lateinit var repository: CloudRepository
+    private lateinit var api: DarkiCloudApi
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         sessionStore = SessionStore(applicationContext)
         val database = CloudDatabase.create(applicationContext)
-        repository = CloudRepository(
-            api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient()),
-            dao = database.cloudDao(),
-        )
+        api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
+        repository = CloudRepository(api = api, dao = database.cloudDao())
+        handleAuthIntent(intent)
 
         setContent {
             val driveViewModel: DarkiCloudViewModel = viewModel(
                 factory = DarkiCloudViewModel.factory(repository, sessionStore),
             )
-            DarkiCloudApp(driveViewModel)
+            DarkiCloudApp(driveViewModel, onLogin = { openTelegramLogin() })
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthIntent(intent)
+    }
+
+    private fun openTelegramLogin() {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.telegramLoginUrl())))
+    }
+
+    private fun handleAuthIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "darkicloud" || uri.host != "auth") return
+        val code = uri.getQueryParameter("code") ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                val response = api.exchangeTelegramLogin(code)
+                val token = response.getString("token")
+                sessionStore.token = token
+                sessionStore.userId = response.getJSONObject("user").getString("id")
+                repository.loadRoot(token)
+            }
         }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun DarkiCloudApp(viewModel: DarkiCloudViewModel) {
+private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, onLogin: () -> Unit) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF050505)) {
             val folders by viewModel.folders.collectAsState(initial = emptyList())
             val files by viewModel.files.collectAsState(initial = emptyList())
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
             val error by viewModel.error.collectAsState(initial = null)
+            val authenticated = viewModel.isAuthenticated
 
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    DriveTopBar(refreshing = refreshing, onRefresh = viewModel::refreshRoot)
-                    DriveContent(folders = folders, files = files, error = error)
+                    DriveTopBar(refreshing = refreshing, authenticated = authenticated, onRefresh = viewModel::refreshRoot, onLogin = onLogin)
+                    if (authenticated) DriveContent(folders, files, error)
+                    else LoginContent(onLogin)
                 }
-
-                FloatingActionButton(
-                    onClick = { },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-                    containerColor = Color(0xFF171717),
-                    contentColor = Color(0xFFB7F7FF),
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add")
+                if (authenticated) {
+                    FloatingActionButton(
+                        onClick = { },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
+                        containerColor = Color(0xFF171717),
+                        contentColor = Color(0xFFB7F7FF),
+                    ) { Icon(Icons.Default.Add, contentDescription = "Add") }
                 }
             }
         }
@@ -104,32 +135,47 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel) {
 }
 
 @androidx.compose.runtime.Composable
-private fun DriveTopBar(refreshing: Boolean, onRefresh: () -> Unit) {
+private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, onRefresh: () -> Unit, onLogin: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
-                Text("My Drive", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
+                Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
             }
-            IconButton(onClick = onRefresh, enabled = !refreshing) {
-                if (refreshing) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+            if (authenticated) {
+                IconButton(onClick = onRefresh, enabled = !refreshing) {
+                    if (refreshing) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                 }
+                IconButton(onClick = { }) { Icon(Icons.Default.Search, contentDescription = "Search") }
+                IconButton(onClick = { }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+            } else {
+                IconButton(onClick = onLogin) { Icon(Icons.Default.Login, contentDescription = "Sign in") }
             }
-            IconButton(onClick = { }) { Icon(Icons.Default.Search, contentDescription = "Search") }
-            IconButton(onClick = { }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         }
-
         Spacer(Modifier.height(18.dp))
-        Box(
-            modifier = Modifier.fillMaxWidth().height(2.dp).background(
-                Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent)),
-            ),
-        )
+        Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(
+            Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent)),
+        ))
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun LoginContent(onLogin: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(120.dp))
+        Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(28.dp))
+        Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) {
+            Icon(Icons.Default.Login, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Continue with Telegram")
+        }
     }
 }
 
@@ -141,29 +187,17 @@ private fun DriveContent(
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Your private cloud storage",
-            color = Color(0xFF858585),
-            modifier = Modifier.padding(top = 4.dp, bottom = 18.dp),
-        )
-
+        Text("Your private cloud storage", color = Color(0xFF858585), modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
         if (error != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB4AB), modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(12.dp))
         }
-
         if (folders.isEmpty() && files.isEmpty() && error == null) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), modifier = Modifier.size(52.dp))
                 Spacer(Modifier.height(14.dp))
                 Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium)
@@ -171,33 +205,17 @@ private fun DriveContent(
             }
             return
         }
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 100.dp),
-        ) {
-            items(folders, key = { it.id }) { folder ->
-                DriveItemRow(name = folder.name, subtitle = "Folder", isFolder = true)
-            }
-            items(files, key = { it.id }) { file ->
-                DriveItemRow(name = file.name, subtitle = formatSize(file.sizeBytes), isFolder = false)
-            }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
+            items(folders, key = { it.id }) { folder -> DriveItemRow(folder.name, "Folder", true) }
+            items(files, key = { it.id }) { file -> DriveItemRow(file.name, formatSize(file.sizeBytes), false) }
         }
     }
 }
 
 @androidx.compose.runtime.Composable
 private fun DriveItemRow(name: String, subtitle: String, isFolder: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).padding(horizontal = 16.dp, vertical = 15.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (isFolder) Icons.Default.Folder else Icons.Default.Description,
-            null,
-            tint = if (isFolder) Color(0xFFB7F7FF) else Color(0xFFB0B0B0),
-            modifier = Modifier.size(28.dp),
-        )
+    Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (isFolder) Icons.Default.Folder else Icons.Default.Description, null, tint = if (isFolder) Color(0xFFB7F7FF) else Color(0xFFB0B0B0), modifier = Modifier.size(28.dp))
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, fontWeight = FontWeight.Medium)
