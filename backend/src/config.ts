@@ -31,7 +31,6 @@ export const config = {
   telegramClientSecret: optionalEnv("TELEGRAM_CLIENT_SECRET"),
   telegramOidcRedirectUri: optionalEnv("TELEGRAM_OIDC_REDIRECT_URI"),
   telegramAppRedirectUri: optionalEnv("TELEGRAM_APP_REDIRECT_URI") ?? "darkicloud://auth",
-  sessionSecret: optionalEnv("SESSION_SECRET"),
 };
 
 export function requireTelegramBotToken(): string {
@@ -49,8 +48,4 @@ export function requireTelegramOidcConfig() {
     redirectUri: config.telegramOidcRedirectUri ?? requiredEnv("TELEGRAM_OIDC_REDIRECT_URI"),
     appRedirectUri: config.telegramAppRedirectUri,
   };
-}
-
-export function requireSessionSecret(): string {
-  return config.sessionSecret ?? requiredEnv("SESSION_SECRET");
 }
