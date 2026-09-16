@@ -48,6 +48,7 @@ export type FileRecord = {
 
 export type StorageObjectRecord = {
   id: string;
+  userId: string;
   provider: string;
   providerObjectKey: string;
   sizeBytes: string;
