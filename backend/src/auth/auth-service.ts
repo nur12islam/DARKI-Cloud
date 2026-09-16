@@ -1,10 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { db } from "../db/pool.js";
 import { UserRepository } from "../db/repositories/user-repository.js";
 import { FolderRepository } from "../db/repositories/folder-repository.js";
 import { withTransaction } from "../db/transaction.js";
 import { ServiceError } from "../services/errors.js";
 import { displayNameFromTelegram, verifyTelegramLogin } from "./telegram-login.js";
-import { createSessionToken } from "./session.js";
+import { createSessionToken, hashSessionToken, sessionExpiresAt } from "./session.js";
+import { SessionRepository } from "./session-repository.js";
 import type { AuthenticatedUser, TelegramLoginPayload } from "./types.js";
 
 export class AuthService {
@@ -17,7 +19,6 @@ export class AuthService {
       const users = new UserRepository(client);
       const folders = new FolderRepository(client);
       const existing = await users.findByTelegramUserId(payload.id);
-
       if (existing) return existing;
 
       const user = await users.create(payload.id, displayNameFromTelegram(payload));
@@ -32,7 +33,18 @@ export class AuthService {
     return user;
   }
 
-  issueSessionToken(userId: string, secret: string): string {
-    return createSessionToken(userId, secret);
+  async createSession(userId: string): Promise<string> {
+    const token = createSessionToken();
+    await new SessionRepository(db).create({
+      id: randomUUID(),
+      userId,
+      tokenHash: hashSessionToken(token),
+      expiresAt: sessionExpiresAt(),
+    });
+    return token;
+  }
+
+  async revokeSession(token: string): Promise<void> {
+    await new SessionRepository(db).revokeByTokenHash(hashSessionToken(token));
   }
 }
