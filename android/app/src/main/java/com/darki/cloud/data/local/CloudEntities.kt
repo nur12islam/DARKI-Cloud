@@ -6,35 +6,42 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "users")
 data class UserEntity(
     @PrimaryKey val id: String,
-    val telegramUserId: String,
+    val telegramUserId: Long,
     val displayName: String,
 )
 
 @Entity(tableName = "devices")
 data class DeviceEntity(
     @PrimaryKey val id: String,
+    val userId: String,
     val name: String,
     val platform: String,
-    val syncCursor: String = "0",
+    val lastSeenAt: Long?,
+    val syncCursor: Long = 0L,
 )
 
 @Entity(tableName = "folders")
 data class FolderEntity(
     @PrimaryKey val id: String,
+    val userId: String,
     val parentId: String?,
     val name: String,
-    val modifiedAt: String,
-    val deletedAt: String?,
+    val createdAt: Long?,
+    val modifiedAt: Long?,
+    val deletedAt: Long?,
 )
 
 @Entity(tableName = "files")
 data class FileEntity(
     @PrimaryKey val id: String,
+    val userId: String,
     val folderId: String,
+    val storageObjectId: String?,
     val name: String,
     val mimeType: String?,
     val sizeBytes: Long?,
     val sha256: String?,
-    val modifiedAt: String,
-    val deletedAt: String?,
+    val createdAt: Long?,
+    val modifiedAt: Long?,
+    val deletedAt: Long?,
 )
