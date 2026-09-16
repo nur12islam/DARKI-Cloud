@@ -27,5 +27,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+    annotationProcessor("androidx.room:room-compiler:2.7.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
