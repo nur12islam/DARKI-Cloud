@@ -16,45 +16,30 @@ class DarkiCloudApi(
     private val baseUrl = baseUrl.trimEnd('/').toHttpUrl()
 
     fun telegramLoginUrl(): String = baseUrl.newBuilder().addPathSegments("api/v1/auth/telegram/start").build().toString()
-
-    suspend fun exchangeTelegramLogin(code: String): JSONObject =
-        postJson("/api/v1/auth/telegram/exchange", null, JSONObject().put("code", code))
-
-    suspend fun logout(token: String) {
-        postJson("/api/v1/auth/logout", token, JSONObject())
-    }
-
+    suspend fun exchangeTelegramLogin(code: String): JSONObject = postJson("/api/v1/auth/telegram/exchange", null, JSONObject().put("code", code))
+    suspend fun logout(token: String) { postJson("/api/v1/auth/logout", token, JSONObject()) }
     suspend fun getMe(token: String): JSONObject = get("/api/v1/me", token)
     suspend fun getRootFolder(token: String): JSONObject = get("/api/v1/folders/root", token)
-
     suspend fun registerDevice(token: String, deviceName: String, platform: String): JSONObject =
-        postJson("/api/v1/devices", token, JSONObject().apply {
-            put("deviceName", deviceName)
-            put("platform", platform)
-        })
-
+        postJson("/api/v1/devices", token, JSONObject().apply { put("deviceName", deviceName); put("platform", platform) })
     suspend fun pullChanges(token: String, deviceId: String, cursor: String, limit: Int = 100): JSONObject =
         get("/api/v1/sync/pull", token, mapOf("deviceId" to deviceId, "cursor" to cursor, "limit" to limit.toString()))
-
+    suspend fun acknowledgeSync(token: String, deviceId: String, cursor: String) {
+        postJson("/api/v1/sync/ack", token, JSONObject().apply { put("deviceId", deviceId); put("cursor", cursor) })
+    }
     suspend fun getFolder(token: String, folderId: String): JSONObject = get("/api/v1/folders/$folderId", token)
 
-    private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject =
-        withContext(Dispatchers.IO) {
-            val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
-            query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
-            execute(Request.Builder().url(urlBuilder.build()).get().apply { bearer(token) }.build())
-        }
-
-    private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject =
-        withContext(Dispatchers.IO) {
-            val requestBody = body.toString().toRequestBody("application/json".toMediaType())
-            val builder = Request.Builder()
-                .url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build())
-                .post(requestBody)
-            if (token != null) builder.bearer(token)
-            execute(builder.build())
-        }
-
+    private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
+        val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
+        query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
+        execute(Request.Builder().url(urlBuilder.build()).get().apply { bearer(token) }.build())
+    }
+    private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+        val builder = Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).post(requestBody)
+        if (token != null) builder.bearer(token)
+        execute(builder.build())
+    }
     private fun execute(request: Request): JSONObject {
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
@@ -62,9 +47,7 @@ class DarkiCloudApi(
             return if (text.isBlank()) JSONObject() else JSONObject(text)
         }
     }
-
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
 }
 
-class DarkiCloudApiException(val statusCode: Int, responseBody: String) :
-    IllegalStateException("DARKI Cloud request failed ($statusCode): $responseBody")
+class DarkiCloudApiException(val statusCode: Int, responseBody: String) : IllegalStateException("DARKI Cloud request failed ($statusCode): $responseBody")
