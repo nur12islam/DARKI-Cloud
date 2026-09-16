@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS telegram_login_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     state_hash CHAR(64) NOT NULL UNIQUE,
     code_verifier TEXT NOT NULL,
+    nonce_hash CHAR(64) NOT NULL,
     exchange_code_hash CHAR(64) UNIQUE,
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     expires_at TIMESTAMPTZ NOT NULL,
