@@ -13,9 +13,7 @@ function requiredEnv(name: string): string {
 
 function integerEnv(name: string, fallback: number): number {
   const value = Number(process.env[name] ?? fallback);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
+  if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
   return value;
 }
 
@@ -29,6 +27,10 @@ export const config = {
   databaseIdleTimeoutMs: integerEnv("DATABASE_IDLE_TIMEOUT_MS", 30000),
   telegramBotToken: optionalEnv("TELEGRAM_BOT_TOKEN"),
   telegramStorageChatId: optionalEnv("TELEGRAM_STORAGE_CHAT_ID"),
+  telegramClientId: optionalEnv("TELEGRAM_CLIENT_ID"),
+  telegramClientSecret: optionalEnv("TELEGRAM_CLIENT_SECRET"),
+  telegramOidcRedirectUri: optionalEnv("TELEGRAM_OIDC_REDIRECT_URI"),
+  telegramAppRedirectUri: optionalEnv("TELEGRAM_APP_REDIRECT_URI") ?? "darkicloud://auth",
   sessionSecret: optionalEnv("SESSION_SECRET"),
 };
 
@@ -38,6 +40,15 @@ export function requireTelegramBotToken(): string {
 
 export function requireTelegramStorageChatId(): string {
   return config.telegramStorageChatId ?? requiredEnv("TELEGRAM_STORAGE_CHAT_ID");
+}
+
+export function requireTelegramOidcConfig() {
+  return {
+    clientId: config.telegramClientId ?? requiredEnv("TELEGRAM_CLIENT_ID"),
+    clientSecret: config.telegramClientSecret ?? requiredEnv("TELEGRAM_CLIENT_SECRET"),
+    redirectUri: config.telegramOidcRedirectUri ?? requiredEnv("TELEGRAM_OIDC_REDIRECT_URI"),
+    appRedirectUri: config.telegramAppRedirectUri,
+  };
 }
 
 export function requireSessionSecret(): string {
