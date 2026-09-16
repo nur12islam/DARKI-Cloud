@@ -68,6 +68,7 @@ export class FilesystemService {
       if (!folder || folder.deletedAt) throw new NotFoundError("Folder not found");
       if (!parent || parent.deletedAt) throw new NotFoundError("Destination folder not found");
       if (folderId === parentId) throw new ConflictError("A folder cannot be moved into itself");
+      if (await folders.isDescendant(userId, folderId, parentId)) throw new ConflictError("A folder cannot be moved into its own descendant");
       if (deviceId && !(await new DeviceRepository(client).findByIdForUser(deviceId, userId))) throw new NotFoundError("Device not found");
       try {
         const moved = await folders.move(folderId, userId, parentId);
