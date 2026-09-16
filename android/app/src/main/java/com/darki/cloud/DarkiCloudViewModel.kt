@@ -9,6 +9,8 @@ import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 class DarkiCloudViewModel(
@@ -16,27 +18,29 @@ class DarkiCloudViewModel(
     private val sessionStore: SessionStore,
 ) : ViewModel() {
     val folders: Flow<List<FolderEntity>> = repository.observeFolders(null)
-    val files: Flow<List<FileEntity>> = repository.observeFiles(ROOT_FOLDER_PLACEHOLDER)
+    val files: Flow<List<FileEntity>> = folders.flatMapLatest { roots ->
+        roots.firstOrNull()?.let(repository::observeFiles) ?: flowOf(emptyList())
+    }
+
+    init {
+        refreshRoot()
+    }
 
     fun refreshRoot() {
         val token = sessionStore.token ?: return
-        val rootId = sessionStore.rootFolderId ?: return
         viewModelScope.launch {
-            repository.loadFolder(token, rootId)
+            runCatching { repository.loadRoot(token) }
         }
     }
 
     companion object {
-        private const val ROOT_FOLDER_PLACEHOLDER = "__root_not_loaded__"
-
         fun factory(
             repository: CloudRepository,
             sessionStore: SessionStore,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return DarkiCloudViewModel(repository, sessionStore) as T
-            }
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                DarkiCloudViewModel(repository, sessionStore) as T
         }
     }
 }
