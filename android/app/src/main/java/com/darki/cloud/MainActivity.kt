@@ -70,19 +70,22 @@ class MainActivity : ComponentActivity() {
         api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         repository = CloudRepository(api = api, dao = database.cloudDao())
         handleAuthIntent(intent)
-
-        setContent {
-            val driveViewModel: DarkiCloudViewModel = viewModel(
-                factory = DarkiCloudViewModel.factory(repository, sessionStore),
-            )
-            DarkiCloudApp(driveViewModel, onLogin = { openTelegramLogin() })
-        }
+        render()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAuthIntent(intent)
+    }
+
+    private fun render() {
+        setContent {
+            val driveViewModel: DarkiCloudViewModel = viewModel(
+                factory = DarkiCloudViewModel.factory(repository, sessionStore),
+            )
+            DarkiCloudApp(driveViewModel, onLogin = { openTelegramLogin() })
+        }
     }
 
     private fun openTelegramLogin() {
@@ -99,7 +102,10 @@ class MainActivity : ComponentActivity() {
                 val token = response.getString("token")
                 sessionStore.token = token
                 sessionStore.userId = response.getJSONObject("user").getString("id")
-                repository.loadRoot(token)
+                val root = repository.loadRoot(token)
+                sessionStore.rootFolderId = root.id
+            }.onSuccess {
+                runOnUiThread { render() }
             }
         }
     }
@@ -114,20 +120,13 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, onLogin: () -> Unit) {
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
             val error by viewModel.error.collectAsState(initial = null)
             val authenticated = viewModel.isAuthenticated
-
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    DriveTopBar(refreshing = refreshing, authenticated = authenticated, onRefresh = viewModel::refreshRoot, onLogin = onLogin)
-                    if (authenticated) DriveContent(folders, files, error)
-                    else LoginContent(onLogin)
+                    DriveTopBar(refreshing, authenticated, viewModel::refreshRoot, onLogin)
+                    if (authenticated) DriveContent(folders, files, error) else LoginContent(onLogin)
                 }
-                if (authenticated) {
-                    FloatingActionButton(
-                        onClick = { },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-                        containerColor = Color(0xFF171717),
-                        contentColor = Color(0xFFB7F7FF),
-                    ) { Icon(Icons.Default.Add, contentDescription = "Add") }
+                if (authenticated) FloatingActionButton(onClick = { }, modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
                 }
             }
         }
@@ -145,20 +144,13 @@ private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, onRefresh: 
                 Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
             }
             if (authenticated) {
-                IconButton(onClick = onRefresh, enabled = !refreshing) {
-                    if (refreshing) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                }
+                IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, contentDescription = "Refresh") }
                 IconButton(onClick = { }) { Icon(Icons.Default.Search, contentDescription = "Search") }
                 IconButton(onClick = { }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
-            } else {
-                IconButton(onClick = onLogin) { Icon(Icons.Default.Login, contentDescription = "Sign in") }
-            }
+            } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, contentDescription = "Sign in") }
         }
         Spacer(Modifier.height(18.dp))
-        Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(
-            Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent)),
-        ))
+        Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent))))
     }
 }
 
@@ -180,11 +172,7 @@ private fun LoginContent(onLogin: () -> Unit) {
 }
 
 @androidx.compose.runtime.Composable
-private fun DriveContent(
-    folders: List<com.darki.cloud.data.local.FolderEntity>,
-    files: List<com.darki.cloud.data.local.FileEntity>,
-    error: String?,
-) {
+private fun DriveContent(folders: List<com.darki.cloud.data.local.FolderEntity>, files: List<com.darki.cloud.data.local.FileEntity>, error: String?) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Your private cloud storage", color = Color(0xFF858585), modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
