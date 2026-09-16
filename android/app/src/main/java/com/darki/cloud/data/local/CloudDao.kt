@@ -19,7 +19,7 @@ interface CloudDao {
     fun observeFiles(folderId: String): Flow<List<FileEntity>>
 
     @Query("UPDATE devices SET syncCursor = :cursor WHERE id = :deviceId")
-    suspend fun updateCursor(deviceId: String, cursor: String)
+    suspend fun updateCursor(deviceId: String, cursor: Long)
 
     @Query("DELETE FROM users")
     suspend fun clearUsers()
