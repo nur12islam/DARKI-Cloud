@@ -60,6 +60,9 @@ export function createApiRouter(): Router {
   router.get("/storage/health", requireAuth, async (_req, res, next) => {
     try { res.json(await fileService.healthCheck()); } catch (error) { next(error); }
   });
+  router.get("/folders/root", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try { res.json({ folder: await filesystemService.getRootFolder(req.userId!) }); } catch (error) { next(error); }
+  });
   router.get("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try { res.json(await filesystemService.listFolder(req.userId!, req.params.folderId)); } catch (error) { next(error); }
   });
