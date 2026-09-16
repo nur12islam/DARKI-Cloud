@@ -3,7 +3,7 @@ package com.darki.cloud
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.darki.cloud.data.api.DarkICloudApiException
+import com.darki.cloud.data.api.DarkiCloudApiException
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
@@ -72,7 +72,7 @@ class DarkiCloudViewModel(
             _error.value = null
             runCatching { repository.loadRoot(token) }
                 .onFailure { error ->
-                    if (error is DarkICloudApiException && error.statusCode == 401) {
+                    if (error is DarkiCloudApiException && error.statusCode == 401) {
                         sessionStore.clear()
                         _isAuthenticated.value = false
                     }
