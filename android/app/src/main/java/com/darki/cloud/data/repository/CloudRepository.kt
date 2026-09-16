@@ -16,6 +16,8 @@ class CloudRepository(
 
     fun observeFiles(folderId: String): Flow<List<FileEntity>> = dao.observeFiles(folderId)
 
+    suspend fun exchangeTelegramLogin(code: String): JSONObject = api.exchangeTelegramLogin(code)
+
     suspend fun loadRoot(token: String): FolderEntity {
         val root = api.getRootFolder(token).getJSONObject("folder")
         val entity = root.toFolderEntity(root.getString("userId"))
