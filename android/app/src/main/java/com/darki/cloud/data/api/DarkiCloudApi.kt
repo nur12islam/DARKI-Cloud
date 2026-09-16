@@ -3,8 +3,10 @@ package com.darki.cloud.data.api
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 class DarkiCloudApi(
@@ -14,6 +16,8 @@ class DarkiCloudApi(
     private val baseUrl = baseUrl.trimEnd('/').toHttpUrl()
 
     suspend fun getMe(token: String): JSONObject = get("/api/v1/me", token)
+
+    suspend fun getRootFolder(token: String): JSONObject = get("/api/v1/folders/root", token)
 
     suspend fun registerDevice(token: String, deviceName: String, platform: String): JSONObject =
         postJson("/api/v1/devices", token, JSONObject().apply {
@@ -40,9 +44,7 @@ class DarkiCloudApi(
 
     private suspend fun postJson(path: String, token: String, body: JSONObject): JSONObject =
         withContext(Dispatchers.IO) {
-            val requestBody = okhttp3.RequestBody.create(
-                "application/json".toMediaTypeOrNull(), body.toString(),
-            )
+            val requestBody = body.toString().toRequestBody("application/json".toMediaType())
             execute(Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build())
                 .post(requestBody).bearer(token).build())
         }
@@ -61,6 +63,3 @@ class DarkiCloudApi(
 
 class DarkiCloudApiException(val statusCode: Int, responseBody: String) :
     IllegalStateException("DARKI Cloud request failed ($statusCode): $responseBody")
-
-private fun String.toMediaTypeOrNull(): okhttp3.MediaType? =
-    okhttp3.MediaType.parse(this)
