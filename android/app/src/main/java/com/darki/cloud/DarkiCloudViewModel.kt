@@ -3,7 +3,6 @@ package com.darki.cloud
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.darki.cloud.data.local.CloudDatabase
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
@@ -17,9 +16,15 @@ class DarkiCloudViewModel(
     private val repository: CloudRepository,
     private val sessionStore: SessionStore,
 ) : ViewModel() {
-    val folders: Flow<List<FolderEntity>> = repository.observeFolders(null)
-    val files: Flow<List<FileEntity>> = folders.flatMapLatest { roots ->
-        roots.firstOrNull()?.let(repository::observeFiles) ?: flowOf(emptyList())
+    private val root: Flow<FolderEntity?> =
+        repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
+
+    val folders: Flow<List<FolderEntity>> = root.flatMapLatest { rootFolder ->
+        rootFolder?.let { repository.observeFolders(it.id) } ?: flowOf(emptyList())
+    }
+
+    val files: Flow<List<FileEntity>> = root.flatMapLatest { rootFolder ->
+        rootFolder?.let { repository.observeFiles(it.id) } ?: flowOf(emptyList())
     }
 
     init {
