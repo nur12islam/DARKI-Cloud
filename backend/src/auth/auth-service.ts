@@ -8,6 +8,7 @@ import { displayNameFromTelegram, verifyTelegramLogin } from "./telegram-login.j
 import { createSessionToken, hashSessionToken, sessionExpiresAt } from "./session.js";
 import { SessionRepository } from "./session-repository.js";
 import type { AuthenticatedUser, TelegramLoginPayload } from "./types.js";
+import type { DbExecutor } from "../db/types.js";
 
 export class AuthService {
   async loginWithTelegram(payload: TelegramLoginPayload, botToken: string): Promise<AuthenticatedUser> {
@@ -34,8 +35,12 @@ export class AuthService {
   }
 
   async createSession(userId: string): Promise<string> {
+    return this.createSessionWithExecutor(db, userId);
+  }
+
+  async createSessionWithExecutor(executor: DbExecutor, userId: string): Promise<string> {
     const token = createSessionToken();
-    await new SessionRepository(db).create({
+    await new SessionRepository(executor).create({
       id: randomUUID(),
       userId,
       tokenHash: hashSessionToken(token),
