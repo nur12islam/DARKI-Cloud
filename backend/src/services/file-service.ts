@@ -91,11 +91,18 @@ export class FileService {
         const files = new FileRepository(client);
         const objects = new StorageObjectRepository(client);
         const folders = new FolderRepository(client);
+        const devices = input.deviceId
+          ? await import("../db/repositories/device-repository.js").then(({ DeviceRepository }) => new DeviceRepository(client))
+          : null;
         const syncChanges = new SyncChangeRepository(client);
         const ownedFolder = await folders.findByIdForUser(input.folderId, input.userId);
         if (!ownedFolder || ownedFolder.deletedAt) throw new NotFoundError("Folder not found");
+        if (input.deviceId && !(await devices!.findByIdForUser(input.deviceId, input.userId))) {
+          throw new NotFoundError("Device not found");
+        }
 
         const object = await objects.create({
+          userId: input.userId,
           provider: stored.provider,
           providerObjectKey: stored.providerObjectKey,
           sizeBytes: String(stored.sizeBytes),
@@ -136,7 +143,7 @@ export class FileService {
   async getDownload(userId: string, fileId: string) {
     const file = await new FileRepository(db).findByIdForUser(fileId, userId);
     if (!file || file.deletedAt || !file.storageObjectId) throw new NotFoundError("File not found");
-    const object = await new StorageObjectRepository(db).findById(file.storageObjectId);
+    const object = await new StorageObjectRepository(db).findByIdForUser(file.storageObjectId, userId);
     if (!object || object.deletedAt || object.state !== "ready") throw new NotFoundError("File content not available");
     if (object.provider !== this.storage.name) throw new ServiceError("Storage provider is not available", "STORAGE_PROVIDER_UNAVAILABLE", 503);
 
