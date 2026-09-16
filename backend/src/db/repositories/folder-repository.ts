@@ -11,6 +11,16 @@ export class FolderRepository {
     return result.rows[0] ?? null;
   }
 
+  async findRootForUser(userId: string): Promise<FolderRecord | null> {
+    const result = await this.db.query<FolderRecord>(
+      `SELECT id, user_id AS "userId", parent_id AS "parentId", name,
+              created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"
+         FROM folders
+        WHERE user_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
+        LIMIT 1`, [userId]);
+    return result.rows[0] ?? null;
+  }
+
   async listChildren(userId: string, parentId: string | null): Promise<FolderRecord[]> {
     const result = await this.db.query<FolderRecord>(
       `SELECT id, user_id AS "userId", parent_id AS "parentId", name,
