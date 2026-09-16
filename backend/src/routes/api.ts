@@ -5,11 +5,13 @@ import { requireAuth, type AuthenticatedRequest } from "../auth/middleware.js";
 import type { TelegramLoginPayload } from "../auth/types.js";
 import { FilesystemService } from "../services/filesystem-service.js";
 import { FileService } from "../services/file-service.js";
+import { FileLifecycleService } from "../services/file-lifecycle-service.js";
 import { getStorageProvider } from "../storage/provider.js";
 
 const authService = new AuthService();
 const filesystemService = new FilesystemService();
 const fileService = new FileService(getStorageProvider());
+const fileLifecycleService = new FileLifecycleService(getStorageProvider());
 
 export function createApiRouter(): Router {
   const router = Router();
@@ -38,34 +40,25 @@ export function createApiRouter(): Router {
   router.post("/devices", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const { deviceName, platform } = req.body as { deviceName?: string; platform?: string };
-      if (!deviceName?.trim() || !platform?.trim()) {
-        res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceName and platform are required" } }); return;
-      }
+      if (!deviceName?.trim() || !platform?.trim()) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceName and platform are required" } }); return; }
       res.status(201).json({ device: await filesystemService.registerDevice(req.userId!, deviceName, platform) });
     } catch (error) { next(error); }
   });
 
   router.get("/storage/capabilities", requireAuth, async (_req, res, next) => {
-    try { res.json({ provider: fileService.storageName, capabilities: await fileService.capabilities() }); }
-    catch (error) { next(error); }
+    try { res.json({ provider: fileService.storageName, capabilities: await fileService.capabilities() }); } catch (error) { next(error); }
   });
-
   router.get("/storage/health", requireAuth, async (_req, res, next) => {
-    try { res.json(await fileService.healthCheck()); }
-    catch (error) { next(error); }
+    try { res.json(await fileService.healthCheck()); } catch (error) { next(error); }
   });
 
   router.get("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
-    try { res.json(await filesystemService.listFolder(req.userId!, req.params.folderId)); }
-    catch (error) { next(error); }
+    try { res.json(await filesystemService.listFolder(req.userId!, req.params.folderId)); } catch (error) { next(error); }
   });
-
   router.post("/folders", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const { parentId, name, deviceId } = req.body as { parentId?: string; name?: string; deviceId?: string };
-      if (!parentId || !name) {
-        res.status(400).json({ error: { code: "INVALID_INPUT", message: "parentId and name are required" } }); return;
-      }
+      if (!parentId || !name) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "parentId and name are required" } }); return; }
       res.status(201).json({ folder: await filesystemService.createFolder(req.userId!, parentId, name, deviceId) });
     } catch (error) { next(error); }
   });
@@ -77,10 +70,8 @@ export function createApiRouter(): Router {
       const mimeType = req.header("content-type")?.split(";", 1)[0]?.trim() || null;
       const lengthHeader = req.header("content-length");
       const sizeBytes = lengthHeader ? Number(lengthHeader) : NaN;
-      if (!folderId || !name || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
-        res.status(400).json({ error: { code: "INVALID_INPUT", message: "folderId, name, and a valid Content-Length are required" } }); return;
-      }
-      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req }) });
+      if (!folderId || !name || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "folderId, name, and a valid Content-Length are required" } }); return; }
+      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id") }) });
     } catch (error) { next(error); }
   });
 
@@ -91,6 +82,20 @@ export function createApiRouter(): Router {
       if (result.file.sizeBytes !== null) res.setHeader("Content-Length", result.file.sizeBytes);
       res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.file.name)}`);
       result.body.pipe(res);
+    } catch (error) { next(error); }
+  });
+
+  router.delete("/files/:fileId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const result = await fileLifecycleService.delete(req.userId!, req.params.fileId, req.header("x-device-id"));
+      res.json(result);
+    } catch (error) { next(error); }
+  });
+
+  router.post("/files/:fileId/restore", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const file = await fileLifecycleService.restore(req.userId!, req.params.fileId, req.header("x-device-id"));
+      res.json({ file });
     } catch (error) { next(error); }
   });
 
