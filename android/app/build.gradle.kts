@@ -17,7 +17,19 @@ android {
         versionName = "0.1.0"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    buildTypes {
+        debug {
+            buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"http://10.0.2.2:8080\"")
+        }
+        release {
+            buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"https://cloud.example.invalid\"")
+        }
+    }
 }
 
 dependencies {
