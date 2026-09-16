@@ -21,6 +21,12 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export class FilesystemService {
+  async getRootFolder(userId: string) {
+    const folder = await new FolderRepository(db).findRootForUser(userId);
+    if (!folder) throw new NotFoundError("Root folder not found");
+    return folder;
+  }
+
   async listFolder(userId: string, folderId: string) {
     const folders = new FolderRepository(db); const files = new FileRepository(db);
     const folder = await folders.findByIdForUser(folderId, userId);
