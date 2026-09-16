@@ -34,8 +34,16 @@ function mapStorageError(error: StorageProviderError): ServiceError {
 export class FileService {
   constructor(private readonly storage: StorageProvider) {}
 
+  get storageName(): string {
+    return this.storage.name;
+  }
+
   async capabilities() {
     return this.storage.capabilities();
+  }
+
+  async healthCheck() {
+    return this.storage.healthCheck();
   }
 
   async upload(input: {
@@ -63,7 +71,6 @@ export class FileService {
     if (!folder || folder.deletedAt) throw new NotFoundError("Folder not found");
 
     const operationId = input.operationId ?? randomUUID();
-
     let stored;
     try {
       stored = await this.storage.putObject({
@@ -85,7 +92,6 @@ export class FileService {
         const objects = new StorageObjectRepository(client);
         const folders = new FolderRepository(client);
         const syncChanges = new SyncChangeRepository(client);
-
         const ownedFolder = await folders.findByIdForUser(input.folderId, input.userId);
         if (!ownedFolder || ownedFolder.deletedAt) throw new NotFoundError("Folder not found");
 
@@ -97,7 +103,6 @@ export class FileService {
           sha256: stored.sha256,
           state: "ready",
         });
-
         const file = await files.create({
           userId: input.userId,
           folderId: input.folderId,
@@ -107,7 +112,6 @@ export class FileService {
           sha256: stored.sha256,
           storageObjectId: object.id,
         });
-
         await syncChanges.append({
           userId: input.userId,
           deviceId: input.deviceId ?? null,
@@ -117,7 +121,6 @@ export class FileService {
           operation: "create",
           payload: { folderId: file.folderId, name: file.name, sizeBytes: file.sizeBytes, mimeType: file.mimeType },
         });
-
         return file;
       });
     } catch (error) {
@@ -133,13 +136,9 @@ export class FileService {
   async getDownload(userId: string, fileId: string) {
     const file = await new FileRepository(db).findByIdForUser(fileId, userId);
     if (!file || file.deletedAt || !file.storageObjectId) throw new NotFoundError("File not found");
-
     const object = await new StorageObjectRepository(db).findById(file.storageObjectId);
     if (!object || object.deletedAt || object.state !== "ready") throw new NotFoundError("File content not available");
-
-    if (object.provider !== this.storage.name) {
-      throw new ServiceError("Storage provider is not available", "STORAGE_PROVIDER_UNAVAILABLE", 503);
-    }
+    if (object.provider !== this.storage.name) throw new ServiceError("Storage provider is not available", "STORAGE_PROVIDER_UNAVAILABLE", 503);
 
     const capabilities = await this.storage.capabilities();
     const sizeBytes = Number(object.sizeBytes);
@@ -147,7 +146,6 @@ export class FileService {
     if (capabilities.maxDownloadBytes !== null && sizeBytes > capabilities.maxDownloadBytes) {
       throw new ServiceError("File exceeds storage provider download limit", "OBJECT_TOO_LARGE", 413);
     }
-
     try {
       const body = await this.storage.getObject({ providerObjectKey: object.providerObjectKey });
       return { file, object, body };
