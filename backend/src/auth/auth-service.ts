@@ -8,7 +8,7 @@ import { displayNameFromTelegram, verifyTelegramLogin } from "./telegram-login.j
 import { createSessionToken, hashSessionToken, sessionExpiresAt } from "./session.js";
 import { SessionRepository } from "./session-repository.js";
 import type { AuthenticatedUser, TelegramLoginPayload } from "./types.js";
-import type { DbExecutor } from "../db/types.js";
+import type { DbExecutor } from "../db/repositories/types.js";
 
 export class AuthService {
   async loginWithTelegram(payload: TelegramLoginPayload, botToken: string): Promise<AuthenticatedUser> {
