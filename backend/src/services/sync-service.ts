@@ -6,13 +6,19 @@ import { NotFoundError, ServiceError } from "./errors.js";
 export class SyncService {
   async pull(userId: string, deviceId: string, cursor: string, limit = 100) {
     if (!/^\d+$/.test(cursor)) throw new ServiceError("cursor must be a non-negative integer", "INVALID_INPUT", 400);
+    const device = await new DeviceRepository(db).findByIdForUser(deviceId, userId);
+    if (!device) throw new NotFoundError("Device not found");
+    const changes = await new SyncChangeRepository(db).listAfter(userId, cursor, limit);
+    const nextCursor = changes.length > 0 ? changes[changes.length - 1]!.sequence : cursor;
+    return { changes, cursor: nextCursor, hasMore: changes.length === Math.min(Math.max(Math.trunc(limit), 1), 500) };
+  }
+
+  async acknowledge(userId: string, deviceId: string, cursor: string): Promise<void> {
+    if (!/^\d+$/.test(cursor)) throw new ServiceError("cursor must be a non-negative integer", "INVALID_INPUT", 400);
     const devices = new DeviceRepository(db);
     const device = await devices.findByIdForUser(deviceId, userId);
     if (!device) throw new NotFoundError("Device not found");
-
-    const changes = await new SyncChangeRepository(db).listAfter(userId, cursor, limit);
-    const nextCursor = changes.length > 0 ? changes[changes.length - 1]!.sequence : cursor;
-    await devices.updateCursor(deviceId, userId, nextCursor);
-    return { changes, cursor: nextCursor, hasMore: changes.length === Math.min(Math.max(Math.trunc(limit), 1), 500) };
+    if (BigInt(cursor) < BigInt(device.syncCursor)) throw new ServiceError("cursor cannot move backwards", "INVALID_INPUT", 400);
+    await devices.updateCursor(deviceId, userId, cursor);
   }
 }
