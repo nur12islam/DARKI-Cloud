@@ -4,9 +4,7 @@
   "private": true,
   "description": "DARKI Cloud backend API",
   "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -17,6 +15,7 @@
   "dependencies": {
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "jose": "^6.1.0",
     "pg": "^8.16.3"
   },
   "devDependencies": {
