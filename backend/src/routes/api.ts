@@ -23,7 +23,6 @@ export function createApiRouter(): Router {
   router.get("/auth/telegram/start", async (_req, res, next) => {
     try { res.redirect(302, await telegramOidc.start()); } catch (error) { next(error); }
   });
-
   router.get("/auth/telegram/callback", async (req, res, next) => {
     try {
       const code = typeof req.query.code === "string" ? req.query.code : "";
@@ -32,7 +31,6 @@ export function createApiRouter(): Router {
       res.redirect(302, await telegramOidc.callback(code, state));
     } catch (error) { next(error); }
   });
-
   router.post("/auth/telegram/exchange", async (req, res, next) => {
     try {
       const code = typeof req.body?.code === "string" ? req.body.code : "";
@@ -40,7 +38,6 @@ export function createApiRouter(): Router {
       res.json(await telegramOidc.exchange(code));
     } catch (error) { next(error); }
   });
-
   router.post("/auth/telegram", async (req, res, next) => {
     try {
       const payload = req.body as TelegramLoginPayload;
@@ -49,7 +46,6 @@ export function createApiRouter(): Router {
       res.status(200).json({ user, token, tokenType: "Bearer" });
     } catch (error) { next(error); }
   });
-
   router.post("/auth/logout", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try { if (req.sessionToken) await authService.revokeSession(req.sessionToken); res.status(204).send(); }
     catch (error) { next(error); }
@@ -65,7 +61,6 @@ export function createApiRouter(): Router {
       res.status(201).json({ device: await filesystemService.registerDevice(req.userId!, deviceName, platform) });
     } catch (error) { next(error); }
   });
-
   router.get("/sync/pull", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : "";
@@ -73,6 +68,14 @@ export function createApiRouter(): Router {
       const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
       if (!deviceId || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceId and limit (1-500) are required" } }); return; }
       res.json(await syncService.pull(req.userId!, deviceId, cursor, limit));
+    } catch (error) { next(error); }
+  });
+  router.post("/sync/ack", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { deviceId, cursor } = req.body as { deviceId?: string; cursor?: string };
+      if (!deviceId || typeof cursor !== "string") { res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceId and cursor are required" } }); return; }
+      await syncService.acknowledge(req.userId!, deviceId, cursor);
+      res.status(204).send();
     } catch (error) { next(error); }
   });
 
@@ -121,6 +124,5 @@ export function createApiRouter(): Router {
   router.post("/files/:fileId/restore", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try { res.json({ file: await fileLifecycleService.restore(req.userId!, req.params.fileId, req.header("x-device-id")) }); } catch (error) { next(error); }
   });
-
   return router;
 }
