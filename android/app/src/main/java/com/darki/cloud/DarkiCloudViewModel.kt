@@ -8,6 +8,7 @@ import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -27,6 +28,12 @@ class DarkiCloudViewModel(
         rootFolder?.let { repository.observeFiles(it.id) } ?: flowOf(emptyList())
     }
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: Flow<Boolean> = _isRefreshing
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: Flow<String?> = _error
+
     init {
         refreshRoot()
     }
@@ -34,7 +41,11 @@ class DarkiCloudViewModel(
     fun refreshRoot() {
         val token = sessionStore.token ?: return
         viewModelScope.launch {
+            _isRefreshing.value = true
+            _error.value = null
             runCatching { repository.loadRoot(token) }
+                .onFailure { _error.value = it.message ?: "Unable to refresh cloud data" }
+            _isRefreshing.value = false
         }
     }
 
