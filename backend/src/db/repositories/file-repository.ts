@@ -5,12 +5,10 @@ export class FileRepository {
 
   async findByIdForUser(id: string, userId: string): Promise<FileRecord | null> {
     const result = await this.db.query<FileRecord>(
-      `SELECT id, user_id AS "userId", folder_id AS "folderId",
-              storage_object_id AS "storageObjectId", name, mime_type AS "mimeType",
-              size_bytes AS "sizeBytes", sha256,
+      `SELECT id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+              name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
               created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"
-         FROM files
-        WHERE id = $1 AND user_id = $2`,
+         FROM files WHERE id = $1 AND user_id = $2`,
       [id, userId],
     );
     return result.rows[0] ?? null;
@@ -18,9 +16,8 @@ export class FileRepository {
 
   async listByFolder(userId: string, folderId: string): Promise<FileRecord[]> {
     const result = await this.db.query<FileRecord>(
-      `SELECT id, user_id AS "userId", folder_id AS "folderId",
-              storage_object_id AS "storageObjectId", name, mime_type AS "mimeType",
-              size_bytes AS "sizeBytes", sha256,
+      `SELECT id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+              name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
               created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"
          FROM files
         WHERE user_id = $1 AND folder_id = $2 AND deleted_at IS NULL
@@ -30,26 +27,39 @@ export class FileRepository {
     return result.rows;
   }
 
-  async create(input: {
-    userId: string;
-    folderId: string;
-    name: string;
-    mimeType?: string | null;
-    sizeBytes?: string | null;
-    sha256?: string | null;
-    storageObjectId?: string | null;
-  }): Promise<FileRecord> {
+  async create(input: { userId: string; folderId: string; name: string; mimeType?: string | null; sizeBytes?: string | null; sha256?: string | null; storageObjectId?: string | null }): Promise<FileRecord> {
     const result = await this.db.query<FileRecord>(
-      `INSERT INTO files
-         (user_id, folder_id, storage_object_id, name, mime_type, size_bytes, sha256)
+      `INSERT INTO files (user_id, folder_id, storage_object_id, name, mime_type, size_bytes, sha256)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, user_id AS "userId", folder_id AS "folderId",
-                 storage_object_id AS "storageObjectId", name, mime_type AS "mimeType",
-                 size_bytes AS "sizeBytes", sha256,
+       RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+                 name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
                  created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`,
-      [input.userId, input.folderId, input.storageObjectId ?? null, input.name,
-        input.mimeType ?? null, input.sizeBytes ?? null, input.sha256 ?? null],
+      [input.userId, input.folderId, input.storageObjectId ?? null, input.name, input.mimeType ?? null, input.sizeBytes ?? null, input.sha256 ?? null],
     );
     return result.rows[0]!;
+  }
+
+  async softDelete(id: string, userId: string): Promise<FileRecord | null> {
+    const result = await this.db.query<FileRecord>(
+      `UPDATE files SET deleted_at = now(), modified_at = now()
+        WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+      RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+                name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
+                created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`,
+      [id, userId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async restore(id: string, userId: string): Promise<FileRecord | null> {
+    const result = await this.db.query<FileRecord>(
+      `UPDATE files SET deleted_at = NULL, modified_at = now()
+        WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL
+      RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+                name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
+                created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`,
+      [id, userId],
+    );
+    return result.rows[0] ?? null;
   }
 }
