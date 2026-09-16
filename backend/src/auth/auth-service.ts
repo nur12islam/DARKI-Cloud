@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { db } from "../db/pool.js";
 import { UserRepository } from "../db/repositories/user-repository.js";
 import { FolderRepository } from "../db/repositories/folder-repository.js";
 import { withTransaction } from "../db/transaction.js";
 import { ServiceError } from "../services/errors.js";
 import { displayNameFromTelegram, verifyTelegramLogin } from "./telegram-login.js";
+import { createSessionToken } from "./session.js";
 import type { AuthenticatedUser, TelegramLoginPayload } from "./types.js";
 
 export class AuthService {
@@ -32,9 +32,7 @@ export class AuthService {
     return user;
   }
 
-  issueSessionToken(_userId: string): string {
-    // Temporary development boundary. A signed/persistent session implementation
-    // will replace this before production authentication is enabled.
-    return randomUUID();
+  issueSessionToken(userId: string, secret: string): string {
+    return createSessionToken(userId, secret);
   }
 }
