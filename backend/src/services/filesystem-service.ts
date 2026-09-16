@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { db } from "../db/pool.js";
 import { withTransaction } from "../db/transaction.js";
 import { DeviceRepository } from "../db/repositories/device-repository.js";
 import { FileRepository } from "../db/repositories/file-repository.js";
@@ -21,16 +22,16 @@ function validateName(name: string): string {
 
 export class FilesystemService {
   async listFolder(userId: string, folderId: string) {
-    const folderRepository = new FolderRepository((await import("../db/pool.js")).db);
-    const fileRepository = new FileRepository((await import("../db/pool.js")).db);
-    const folder = await folderRepository.findByIdForUser(folderId, userId);
+    const folders = new FolderRepository(db);
+    const files = new FileRepository(db);
+    const folder = await folders.findByIdForUser(folderId, userId);
     if (!folder || folder.deletedAt) throw new NotFoundError("Folder not found");
 
-    const [folders, files] = await Promise.all([
-      folderRepository.listChildren(userId, folderId),
-      fileRepository.listByFolder(userId, folderId),
+    const [children, childFiles] = await Promise.all([
+      folders.listChildren(userId, folderId),
+      files.listByFolder(userId, folderId),
     ]);
-    return { folder, folders, files };
+    return { folder, folders: children, files: childFiles };
   }
 
   async createFolder(userId: string, parentId: string, name: string, deviceId?: string | null) {
@@ -57,7 +58,7 @@ export class FilesystemService {
   }
 
   async registerDevice(userId: string, deviceName: string, platform: string) {
-    const devices = new DeviceRepository((await import("../db/pool.js")).db);
+    const devices = new DeviceRepository(db);
     return devices.create(userId, deviceName.trim(), platform.trim());
   }
 }
