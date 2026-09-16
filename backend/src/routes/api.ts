@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { requireTelegramBotToken } from "../config.js";
+import { requireTelegramBotToken, requireTelegramOidcConfig } from "../config.js";
 import { AuthService } from "../auth/auth-service.js";
+import { TelegramOidcService } from "../auth/telegram-oidc.js";
 import { requireAuth, type AuthenticatedRequest } from "../auth/middleware.js";
 import type { TelegramLoginPayload } from "../auth/types.js";
 import { FilesystemService } from "../services/filesystem-service.js";
@@ -10,6 +11,7 @@ import { SyncService } from "../services/sync-service.js";
 import { getStorageProvider } from "../storage/provider.js";
 
 const authService = new AuthService();
+const telegramOidc = new TelegramOidcService(requireTelegramOidcConfig(), authService);
 const filesystemService = new FilesystemService();
 const fileService = new FileService(getStorageProvider());
 const fileLifecycleService = new FileLifecycleService(getStorageProvider());
@@ -17,6 +19,27 @@ const syncService = new SyncService();
 
 export function createApiRouter(): Router {
   const router = Router();
+
+  router.get("/auth/telegram/start", async (_req, res, next) => {
+    try { res.redirect(302, await telegramOidc.start()); } catch (error) { next(error); }
+  });
+
+  router.get("/auth/telegram/callback", async (req, res, next) => {
+    try {
+      const code = typeof req.query.code === "string" ? req.query.code : "";
+      const state = typeof req.query.state === "string" ? req.query.state : "";
+      if (!code || !state) { res.status(400).send("Invalid Telegram login response"); return; }
+      res.redirect(302, await telegramOidc.callback(code, state));
+    } catch (error) { next(error); }
+  });
+
+  router.post("/auth/telegram/exchange", async (req, res, next) => {
+    try {
+      const code = typeof req.body?.code === "string" ? req.body.code : "";
+      if (!code) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "Login code is required" } }); return; }
+      res.json(await telegramOidc.exchange(code));
+    } catch (error) { next(error); }
+  });
 
   router.post("/auth/telegram", async (req, res, next) => {
     try {
@@ -26,6 +49,7 @@ export function createApiRouter(): Router {
       res.status(200).json({ user, token, tokenType: "Bearer" });
     } catch (error) { next(error); }
   });
+
   router.post("/auth/logout", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try { if (req.sessionToken) await authService.revokeSession(req.sessionToken); res.status(204).send(); }
     catch (error) { next(error); }
@@ -47,9 +71,7 @@ export function createApiRouter(): Router {
       const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : "";
       const cursor = typeof req.query.cursor === "string" ? req.query.cursor : "0";
       const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 100;
-      if (!deviceId || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
-        res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceId and limit (1-500) are required" } }); return;
-      }
+      if (!deviceId || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "deviceId and limit (1-500) are required" } }); return; }
       res.json(await syncService.pull(req.userId!, deviceId, cursor, limit));
     } catch (error) { next(error); }
   });
