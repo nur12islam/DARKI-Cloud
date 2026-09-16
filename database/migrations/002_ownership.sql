@@ -1,5 +1,5 @@
 -- DARKI Cloud — ownership hardening
--- Makes cross-user folder/storage references impossible at the database layer.
+-- Safe for both the original Milestone 1 schema and the hardened base schema.
 
 ALTER TABLE storage_objects
     ADD COLUMN IF NOT EXISTS user_id UUID;
@@ -39,32 +39,45 @@ END $$;
 ALTER TABLE storage_objects
     ALTER COLUMN user_id SET NOT NULL;
 
-ALTER TABLE folders
-    ADD CONSTRAINT folders_user_id_id_unique UNIQUE (user_id, id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'folders_user_id_id_unique'
+    ) THEN
+        ALTER TABLE folders ADD CONSTRAINT folders_user_id_id_unique UNIQUE (user_id, id);
+    END IF;
 
-ALTER TABLE storage_objects
-    ADD CONSTRAINT storage_objects_user_id_id_unique UNIQUE (user_id, id);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'storage_objects_user_id_id_unique'
+    ) THEN
+        ALTER TABLE storage_objects ADD CONSTRAINT storage_objects_user_id_id_unique UNIQUE (user_id, id);
+    END IF;
 
-ALTER TABLE folders
-    ADD CONSTRAINT folders_parent_same_user_fk
-    FOREIGN KEY (user_id, parent_id)
-    REFERENCES folders (user_id, id)
-    ON DELETE RESTRICT;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'folders_parent_same_user_fk'
+    ) THEN
+        ALTER TABLE folders ADD CONSTRAINT folders_parent_same_user_fk
+            FOREIGN KEY (user_id, parent_id) REFERENCES folders (user_id, id) ON DELETE RESTRICT;
+    END IF;
 
-ALTER TABLE files
-    ADD CONSTRAINT files_folder_same_user_fk
-    FOREIGN KEY (user_id, folder_id)
-    REFERENCES folders (user_id, id)
-    ON DELETE RESTRICT;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'files_folder_same_user_fk'
+    ) THEN
+        ALTER TABLE files ADD CONSTRAINT files_folder_same_user_fk
+            FOREIGN KEY (user_id, folder_id) REFERENCES folders (user_id, id) ON DELETE RESTRICT;
+    END IF;
 
-ALTER TABLE files
-    ADD CONSTRAINT files_storage_object_same_user_fk
-    FOREIGN KEY (user_id, storage_object_id)
-    REFERENCES storage_objects (user_id, id)
-    ON DELETE RESTRICT;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'files_storage_object_same_user_fk'
+    ) THEN
+        ALTER TABLE files ADD CONSTRAINT files_storage_object_same_user_fk
+            FOREIGN KEY (user_id, storage_object_id) REFERENCES storage_objects (user_id, id) ON DELETE RESTRICT;
+    END IF;
 
-ALTER TABLE sync_changes
-    ADD CONSTRAINT sync_changes_device_same_user_fk
-    FOREIGN KEY (user_id, device_id)
-    REFERENCES devices (user_id, id)
-    ON DELETE SET NULL;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'sync_changes_device_same_user_fk'
+    ) THEN
+        ALTER TABLE sync_changes ADD CONSTRAINT sync_changes_device_same_user_fk
+            FOREIGN KEY (user_id, device_id) REFERENCES devices (user_id, id) ON DELETE SET NULL;
+    END IF;
+END $$;
