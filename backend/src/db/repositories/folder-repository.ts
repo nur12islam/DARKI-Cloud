@@ -49,4 +49,20 @@ export class FolderRepository {
       [parentId, id, userId]);
     return result.rows[0] ?? null;
   }
+
+  async isDescendant(userId: string, folderId: string, candidateParentId: string): Promise<boolean> {
+    const result = await this.db.query<{ exists: boolean }>(
+      `WITH RECURSIVE descendants AS (
+         SELECT id FROM folders WHERE id = $1 AND user_id = $2
+         UNION ALL
+         SELECT f.id
+           FROM folders f
+           JOIN descendants d ON f.parent_id = d.id
+          WHERE f.user_id = $2
+       )
+       SELECT EXISTS (SELECT 1 FROM descendants WHERE id = $3) AS exists`,
+      [folderId, userId, candidateParentId],
+    );
+    return result.rows[0]?.exists === true;
+  }
 }
