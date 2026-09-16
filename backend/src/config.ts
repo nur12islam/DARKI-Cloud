@@ -28,11 +28,16 @@ export const config = {
   databaseConnectionTimeoutMs: integerEnv("DATABASE_CONNECTION_TIMEOUT_MS", 5000),
   databaseIdleTimeoutMs: integerEnv("DATABASE_IDLE_TIMEOUT_MS", 30000),
   telegramBotToken: optionalEnv("TELEGRAM_BOT_TOKEN"),
+  telegramStorageChatId: optionalEnv("TELEGRAM_STORAGE_CHAT_ID"),
   sessionSecret: optionalEnv("SESSION_SECRET"),
 };
 
 export function requireTelegramBotToken(): string {
   return config.telegramBotToken ?? requiredEnv("TELEGRAM_BOT_TOKEN");
+}
+
+export function requireTelegramStorageChatId(): string {
+  return config.telegramStorageChatId ?? requiredEnv("TELEGRAM_STORAGE_CHAT_ID");
 }
 
 export function requireSessionSecret(): string {
