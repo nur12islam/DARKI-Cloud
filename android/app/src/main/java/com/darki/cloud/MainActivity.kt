@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -39,8 +40,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,15 +55,13 @@ import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDatabase
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
     private lateinit var sessionStore: SessionStore
     private lateinit var repository: CloudRepository
     private lateinit var api: DarkiCloudApi
+    private var pendingAuthCode: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,14 +69,15 @@ class MainActivity : ComponentActivity() {
         val database = CloudDatabase.create(applicationContext)
         api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         repository = CloudRepository(api = api, dao = database.cloudDao())
-        handleAuthIntent(intent)
+        pendingAuthCode = extractAuthCode(intent)
         render()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleAuthIntent(intent)
+        pendingAuthCode = extractAuthCode(intent)
+        render()
     }
 
     private fun render() {
@@ -84,7 +85,11 @@ class MainActivity : ComponentActivity() {
             val driveViewModel: DarkiCloudViewModel = viewModel(
                 factory = DarkiCloudViewModel.factory(repository, sessionStore),
             )
-            DarkiCloudApp(driveViewModel, onLogin = { openTelegramLogin() })
+            DarkiCloudApp(
+                viewModel = driveViewModel,
+                authCode = pendingAuthCode,
+                onLogin = { openTelegramLogin() },
+            )
         }
     }
 
@@ -92,37 +97,32 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.telegramLoginUrl())))
     }
 
-    private fun handleAuthIntent(intent: Intent?) {
-        val uri = intent?.data ?: return
-        if (uri.scheme != "darkicloud" || uri.host != "auth") return
-        val code = uri.getQueryParameter("code") ?: return
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching {
-                val response = api.exchangeTelegramLogin(code)
-                val token = response.getString("token")
-                sessionStore.token = token
-                sessionStore.userId = response.getJSONObject("user").getString("id")
-                val root = repository.loadRoot(token)
-                sessionStore.rootFolderId = root.id
-            }.onSuccess {
-                runOnUiThread { render() }
-            }
-        }
+    private fun extractAuthCode(intent: Intent?): String? {
+        val uri = intent?.data ?: return null
+        if (uri.scheme != "darkicloud" || uri.host != "auth") return null
+        return uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, onLogin: () -> Unit) {
+private fun DarkiCloudApp(
+    viewModel: DarkiCloudViewModel,
+    authCode: String?,
+    onLogin: () -> Unit,
+) {
+    LaunchedEffect(authCode) {
+        if (authCode != null) viewModel.completeTelegramLogin(authCode)
+    }
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF050505)) {
             val folders by viewModel.folders.collectAsState(initial = emptyList())
             val files by viewModel.files.collectAsState(initial = emptyList())
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
             val error by viewModel.error.collectAsState(initial = null)
-            val authenticated = viewModel.isAuthenticated
+            val authenticated by viewModel.isAuthenticated.collectAsState(initial = false)
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    DriveTopBar(refreshing, authenticated, viewModel::refreshRoot, onLogin)
+                    DriveTopBar(refreshing, authenticated, viewModel::refreshRoot, viewModel::logout, onLogin)
                     if (authenticated) DriveContent(folders, files, error) else LoginContent(onLogin)
                 }
                 if (authenticated) FloatingActionButton(onClick = { }, modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) {
@@ -134,7 +134,7 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, onLogin: () -> Unit) {
 }
 
 @androidx.compose.runtime.Composable
-private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, onRefresh: () -> Unit, onLogin: () -> Unit) {
+private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, onRefresh: () -> Unit, onLogout: () -> Unit, onLogin: () -> Unit) {
     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
@@ -146,7 +146,7 @@ private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, onRefresh: 
             if (authenticated) {
                 IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, contentDescription = "Refresh") }
                 IconButton(onClick = { }) { Icon(Icons.Default.Search, contentDescription = "Search") }
-                IconButton(onClick = { }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+                IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, contentDescription = "Log out") }
             } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, contentDescription = "Sign in") }
         }
         Spacer(Modifier.height(18.dp))
