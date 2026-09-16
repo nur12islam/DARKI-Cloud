@@ -1,13 +1,11 @@
 import { Router } from "express";
-import { requireTelegramBotToken, requireSessionSecret, requireTelegramStorageChatId } from "../config.js";
+import { requireTelegramBotToken, requireSessionSecret } from "../config.js";
 import { AuthService } from "../auth/auth-service.js";
 import { requireAuth, type AuthenticatedRequest } from "../auth/middleware.js";
 import type { TelegramLoginPayload } from "../auth/types.js";
 import { FilesystemService } from "../services/filesystem-service.js";
 import { FileService } from "../services/file-service.js";
 import { getStorageProvider } from "../storage/provider.js";
-import { StorageProviderError } from "../storage/provider-error.js";
-import { TelegramBotClient } from "../storage/telegram-bot-client.js";
 
 const authService = new AuthService();
 const filesystemService = new FilesystemService();
@@ -58,6 +56,14 @@ export function createApiRouter(): Router {
     }
   });
 
+  router.get("/storage/health", requireAuth, async (_req: AuthenticatedRequest, res, next) => {
+    try {
+      res.json(await fileService.healthCheck());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const result = await filesystemService.listFolder(req.userId!, req.params.folderId);
@@ -89,7 +95,7 @@ export function createApiRouter(): Router {
     try {
       const folderId = typeof req.query.folderId === "string" ? req.query.folderId : undefined;
       const name = typeof req.query.name === "string" ? req.query.name : undefined;
-      const mimeType = typeof req.header("content-type") === "string" ? req.header("content-type")! : null;
+      const mimeType = req.header("content-type")?.split(";", 1)[0]?.trim() || null;
       const lengthHeader = req.header("content-length");
       const sizeBytes = lengthHeader ? Number(lengthHeader) : NaN;
 
@@ -115,19 +121,10 @@ export function createApiRouter(): Router {
   router.get("/files/:fileId/content", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const result = await fileService.getDownload(req.userId!, req.params.fileId);
-      res.status(200);
       res.setHeader("Content-Type", result.file.mimeType ?? "application/octet-stream");
       if (result.file.sizeBytes !== null) res.setHeader("Content-Length", result.file.sizeBytes);
       res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.file.name)}`);
       result.body.pipe(res);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.get("/storage/health", requireAuth, async (_req: AuthenticatedRequest, res, next) => {
-    try {
-      res.json(await fileService.healthCheck());
     } catch (error) {
       next(error);
     }
