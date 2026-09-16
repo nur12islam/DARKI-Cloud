@@ -54,6 +54,14 @@ class CloudRepository(
         return entity
     }
 
+    suspend fun logout(token: String?) {
+        if (token != null) runCatching { api.logout(token) }
+        dao.clearFiles()
+        dao.clearFolders()
+        dao.clearDevices()
+        dao.clearUsers()
+    }
+
     private fun JSONObject.toFolderEntity(userId: String) = FolderEntity(
         id = getString("id"), userId = userId,
         parentId = if (isNull("parentId")) null else getString("parentId"),
