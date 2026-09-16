@@ -3,6 +3,7 @@ package com.darki.cloud
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.darki.cloud.data.api.DarkICloudApiException
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
@@ -17,8 +18,8 @@ class DarkiCloudViewModel(
     private val repository: CloudRepository,
     private val sessionStore: SessionStore,
 ) : ViewModel() {
-    val isAuthenticated: Boolean
-        get() = sessionStore.token != null
+    private val _isAuthenticated = MutableStateFlow(sessionStore.token != null)
+    val isAuthenticated: Flow<Boolean> = _isAuthenticated
 
     private val root: Flow<FolderEntity?> =
         repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
@@ -39,13 +40,44 @@ class DarkiCloudViewModel(
 
     init { refreshRoot() }
 
+    fun completeTelegramLogin(code: String) {
+        viewModelScope.launch {
+            _error.value = null
+            runCatching {
+                val response = repository.exchangeTelegramLogin(code)
+                val token = response.getString("token")
+                sessionStore.token = token
+                sessionStore.userId = response.getJSONObject("user").getString("id")
+                val rootFolder = repository.loadRoot(token)
+                sessionStore.rootFolderId = rootFolder.id
+                _isAuthenticated.value = true
+            }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" }
+        }
+    }
+
+    fun logout() {
+        val token = sessionStore.token
+        viewModelScope.launch {
+            runCatching { repository.logout(token) }
+                .onFailure { _error.value = it.message ?: "Unable to contact server during logout" }
+            sessionStore.clear()
+            _isAuthenticated.value = false
+        }
+    }
+
     fun refreshRoot() {
         val token = sessionStore.token ?: return
         viewModelScope.launch {
             _isRefreshing.value = true
             _error.value = null
             runCatching { repository.loadRoot(token) }
-                .onFailure { _error.value = it.message ?: "Unable to refresh cloud data" }
+                .onFailure { error ->
+                    if (error is DarkICloudApiException && error.statusCode == 401) {
+                        sessionStore.clear()
+                        _isAuthenticated.value = false
+                    }
+                    _error.value = error.message ?: "Unable to refresh cloud data"
+                }
             _isRefreshing.value = false
         }
     }
