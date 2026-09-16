@@ -40,6 +40,20 @@ function classify(errorCode?: number, description?: string): StorageProviderErro
   return "UNKNOWN";
 }
 
+async function streamToBuffer(stream: Readable, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new StorageProviderError("Upload exceeds configured Telegram limit", "OBJECT_TOO_LARGE");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, total);
+}
+
 export class TelegramBotClient {
   constructor(
     private readonly token: string,
@@ -86,9 +100,14 @@ export class TelegramBotClient {
     sizeBytes: number;
     caption?: string;
   }): Promise<TelegramMessage> {
+    const bytes = await streamToBuffer(input.body, 50 * 1024 * 1024);
+    if (bytes.length !== input.sizeBytes) {
+      throw new StorageProviderError("Upload size does not match declared size", "UNKNOWN");
+    }
+
     const form = new FormData();
     form.set("chat_id", this.storageChatId);
-    form.set("document", new Blob([await Readable.toWeb(input.body).arrayBuffer()], {
+    form.set("document", new Blob([bytes], {
       type: input.mimeType ?? "application/octet-stream",
     }), input.filename);
     if (input.caption) form.set("caption", input.caption);
