@@ -12,12 +12,25 @@ import com.darki.cloud.data.local.TransferEntity
 import java.util.concurrent.TimeUnit
 
 object TransferScheduler {
+    private fun request(transfer: TransferEntity) = OneTimeWorkRequestBuilder<TransferWorker>()
+        .setInputData(workDataOf(TransferWorker.KEY_TRANSFER_ID to transfer.id))
+        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+        .build()
+
     fun enqueue(context: Context, transfer: TransferEntity) {
-        val request = OneTimeWorkRequestBuilder<TransferWorker>()
-            .setInputData(workDataOf(TransferWorker.KEY_TRANSFER_ID to transfer.id))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork("darki-transfer-${transfer.id}", ExistingWorkPolicy.KEEP, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "darki-transfer-${transfer.id}",
+            ExistingWorkPolicy.KEEP,
+            request(transfer),
+        )
+    }
+
+    fun retry(context: Context, transfer: TransferEntity) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "darki-transfer-${transfer.id}",
+            ExistingWorkPolicy.REPLACE,
+            request(transfer),
+        )
     }
 }
