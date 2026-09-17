@@ -19,6 +19,8 @@ class DarkiCloudApi(
     private val baseUrl = baseUrl.trimEnd('/').toHttpUrl()
 
     fun telegramLoginUrl(): String = baseUrl.newBuilder().addPathSegments("api/v1/auth/telegram/start").build().toString()
+    fun fileContentUrl(fileId: String): String = baseUrl.newBuilder().addPathSegments("api/v1/files/$fileId/content").build().toString()
+
     suspend fun exchangeTelegramLogin(code: String): JSONObject = postJson("/api/v1/auth/telegram/exchange", null, JSONObject().put("code", code))
     suspend fun logout(token: String) { postJson("/api/v1/auth/logout", token, JSONObject()) }
     suspend fun getMe(token: String): JSONObject = get("/api/v1/me", token)
@@ -69,12 +71,17 @@ class DarkiCloudApi(
     }
 
     suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(baseUrl.newBuilder().addPathSegments("api/v1/files/$fileId/content").build()).get().bearer(token).build()
+        val request = Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty())
             response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response")
         }
     }
+
+    fun buildMediaRequest(token: String, fileId: String): Request =
+        Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
+
+    fun httpClient(): OkHttpClient = client
 
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
