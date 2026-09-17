@@ -17,7 +17,6 @@ class DarkiCloudApi(
     private val client: OkHttpClient = OkHttpClient(),
 ) {
     private val baseUrl = baseUrl.trimEnd('/').toHttpUrl()
-
     fun telegramLoginUrl(): String = baseUrl.newBuilder().addPathSegments("api/v1/auth/telegram/start").build().toString()
     fun fileContentUrl(fileId: String): String = baseUrl.newBuilder().addPathSegments("api/v1/files/$fileId/content").build().toString()
     suspend fun exchangeTelegramLogin(code: String): JSONObject = postJson("/api/v1/auth/telegram/exchange", null, JSONObject().put("code", code))
@@ -27,6 +26,7 @@ class DarkiCloudApi(
     suspend fun registerDevice(token: String, deviceName: String, platform: String): JSONObject = postJson("/api/v1/devices", token, JSONObject().apply { put("deviceName", deviceName); put("platform", platform) })
     suspend fun pullChanges(token: String, deviceId: String, cursor: String, limit: Int = 100): JSONObject = get("/api/v1/sync/pull", token, mapOf("deviceId" to deviceId, "cursor" to cursor, "limit" to limit.toString()))
     suspend fun acknowledgeSync(token: String, deviceId: String, cursor: String) { postJson("/api/v1/sync/ack", token, JSONObject().apply { put("deviceId", deviceId); put("cursor", cursor) }) }
+    suspend fun search(token: String, query: String, limit: Int = 50): JSONObject = get("/api/v1/search", token, mapOf("q" to query, "limit" to limit.toString()))
     suspend fun getFolder(token: String, folderId: String): JSONObject = get("/api/v1/folders/$folderId", token)
     suspend fun createFolder(token: String, parentId: String, name: String, deviceId: String): JSONObject = postJson("/api/v1/folders", token, JSONObject().apply { put("parentId", parentId); put("name", name); put("deviceId", deviceId) })
     suspend fun renameFolder(token: String, folderId: String, name: String, deviceId: String): JSONObject = patchJson("/api/v1/folders/$folderId", token, JSONObject().apply { put("name", name); put("deviceId", deviceId) })
@@ -46,22 +46,14 @@ class DarkiCloudApi(
     }
     suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty())
-            response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response")
-        }
+        client.newCall(request).execute().use { response -> if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty()); response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response") }
     }
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
-        val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
-        execute(Request.Builder().url(urlBuilder.build()).get().bearer(token).build())
+        val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).get().bearer(token).build())
     }
-    private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val requestBody = body.toString().toRequestBody("application/json".toMediaType()); val builder = Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).post(requestBody); if (token != null) builder.bearer(token); execute(builder.build())
-    }
+    private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject = withContext(Dispatchers.IO) { val requestBody = body.toString().toRequestBody("application/json".toMediaType()); val builder = Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).post(requestBody); if (token != null) builder.bearer(token); execute(builder.build()) }
     private suspend fun patchJson(path: String, token: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) { execute(Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).patch(body.toString().toRequestBody("application/json".toMediaType())).bearer(token).build()) }
-    private suspend fun delete(path: String, token: String, query: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
-        val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).delete().bearer(token).build())
-    }
+    private suspend fun delete(path: String, token: String, query: Map<String, String>): JSONObject = withContext(Dispatchers.IO) { val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).delete().bearer(token).build()) }
     private fun execute(request: Request): JSONObject { client.newCall(request).execute().use { response -> val text = response.body?.string().orEmpty(); if (!response.isSuccessful) throw DarkiCloudApiException(response.code, text); return if (text.isBlank()) JSONObject() else JSONObject(text) } }
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
 }
