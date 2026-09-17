@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.io.OutputStream
 
 class DarkiCloudViewModel(
     private val repository: CloudRepository,
@@ -28,17 +29,14 @@ class DarkiCloudViewModel(
     val currentFolderId: Flow<String?> = _currentFolderId
     private val _folderStack = MutableStateFlow<List<FolderEntity>>(emptyList())
     val folderStack: Flow<List<FolderEntity>> = _folderStack
-    private val currentFolder: Flow<FolderEntity?> = _currentFolderId.flatMapLatest { id ->
-        if (id == null) flowOf(null) else repository.observeFolders(null).flatMapLatest { roots ->
-            if (roots.any { it.id == id }) flowOf(roots.first { it.id == id }) else flowOf(null)
-        }
-    }
     val folders: Flow<List<FolderEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFolders(id) }
     val files: Flow<List<FileEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFiles(id) }
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: Flow<Boolean> = _isRefreshing
     private val _isUploading = MutableStateFlow(false)
     val isUploading: Flow<Boolean> = _isUploading
+    private val _isDownloading = MutableStateFlow(false)
+    val isDownloading: Flow<Boolean> = _isDownloading
     private val _error = MutableStateFlow<String?>(null)
     val error: Flow<String?> = _error
 
@@ -148,6 +146,18 @@ class DarkiCloudViewModel(
                 ensureDeviceAndSync(token)
             }.onFailure { _error.value = it.message ?: "Unable to upload file" }
             _isUploading.value = false
+        }
+    }
+
+    fun downloadFile(file: FileEntity, resolver: ContentResolver, output: OutputStream) {
+        val token = sessionStore.token ?: return
+        viewModelScope.launch {
+            _isDownloading.value = true
+            _error.value = null
+            runCatching { repository.downloadFile(token, file.id, output) }
+                .onFailure { _error.value = it.message ?: "Unable to download file" }
+            runCatching { output.close() }
+            _isDownloading.value = false
         }
     }
 
