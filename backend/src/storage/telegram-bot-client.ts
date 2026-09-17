@@ -67,11 +67,10 @@ export class TelegramBotClient {
   private async api<T>(method: string, body?: BodyInit, headers?: HeadersInit): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(this.apiUrl(method), {
-        method: body === undefined ? "GET" : "POST",
-        body,
-        headers,
-      });
+      const init: RequestInit = { method: body === undefined ? "GET" : "POST" };
+      if (body !== undefined) init.body = body;
+      if (headers !== undefined) init.headers = headers;
+      response = await fetch(this.apiUrl(method), init);
     } catch (error) {
       throw new StorageProviderError("Telegram network request failed", "NETWORK", error);
     }
@@ -107,7 +106,9 @@ export class TelegramBotClient {
 
     const form = new FormData();
     form.set("chat_id", this.storageChatId);
-    form.set("document", new Blob([bytes], {
+    const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(arrayBuffer).set(bytes);
+    form.set("document", new Blob([arrayBuffer], {
       type: input.mimeType ?? "application/octet-stream",
     }), input.filename);
     if (input.caption) form.set("caption", input.caption);
