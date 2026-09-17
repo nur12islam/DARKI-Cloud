@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.io.File
 import java.io.OutputStream
 
 class DarkiCloudViewModel(
@@ -37,6 +38,12 @@ class DarkiCloudViewModel(
     val isUploading: Flow<Boolean> = _isUploading
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: Flow<Boolean> = _isDownloading
+    private val _previewUri = MutableStateFlow<Uri?>(null)
+    val previewUri: Flow<Uri?> = _previewUri
+    private val _previewMimeType = MutableStateFlow<String?>(null)
+    val previewMimeType: Flow<String?> = _previewMimeType
+    private val _previewName = MutableStateFlow<String?>(null)
+    val previewName: Flow<String?> = _previewName
     private val _error = MutableStateFlow<String?>(null)
     val error: Flow<String?> = _error
 
@@ -159,6 +166,44 @@ class DarkiCloudViewModel(
             runCatching { output.close() }
             _isDownloading.value = false
         }
+    }
+
+    fun previewFile(file: FileEntity) {
+        val token = sessionStore.token ?: return
+        viewModelScope.launch {
+            _isDownloading.value = true
+            _error.value = null
+            runCatching {
+                val extension = file.name.substringAfterLast('.', "bin").lowercase().replace(Regex("[^a-z0-9]"), "")
+                val cached = File.createTempFile("darki-preview-", ".$extension")
+                cached.outputStream().use { output -> repository.downloadFile(token, file.id, output) }
+                _previewUri.value = Uri.fromFile(cached)
+                _previewMimeType.value = file.mimeType ?: guessMimeType(file.name)
+                _previewName.value = file.name
+            }.onFailure { _error.value = it.message ?: "Unable to preview file" }
+            _isDownloading.value = false
+        }
+    }
+
+    fun closePreview() {
+        _previewUri.value?.path?.let { runCatching { File(it).delete() } }
+        _previewUri.value = null
+        _previewMimeType.value = null
+        _previewName.value = null
+    }
+
+    private fun guessMimeType(name: String): String? = when (name.substringAfterLast('.', "").lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "bmp" -> "image/bmp"
+        "mp4" -> "video/mp4"
+        "mkv" -> "video/x-matroska"
+        "webm" -> "video/webm"
+        "mov" -> "video/quicktime"
+        "avi" -> "video/x-msvideo"
+        else -> null
     }
 
     private suspend fun ensureDeviceAndSync(token: String) {
