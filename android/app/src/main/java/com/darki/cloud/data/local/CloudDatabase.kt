@@ -4,19 +4,27 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [UserEntity::class, DeviceEntity::class, FolderEntity::class, FileEntity::class, TransferEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class CloudDatabase : RoomDatabase() {
     abstract fun cloudDao(): CloudDao
 
     companion object {
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Version 3 changes migration policy only; the version-2 schema is unchanged.
+            }
+        }
+
         fun create(context: Context): CloudDatabase =
             Room.databaseBuilder(context, CloudDatabase::class.java, "darki-cloud.db")
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_2_3)
                 .build()
     }
 }
