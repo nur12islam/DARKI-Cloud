@@ -98,6 +98,15 @@ export function createApiRouter(): Router {
       res.status(201).json({ folder: await filesystemService.createFolder(req.userId!, parentId, name, deviceId) });
     } catch (error) { next(error); }
   });
+  router.patch("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { name, parentId, deviceId } = req.body as { name?: string; parentId?: string; deviceId?: string };
+      if (typeof name === "string" && parentId) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "Choose either name or parentId" } }); return; }
+      if (typeof name === "string") { res.json({ folder: await filesystemService.renameFolder(req.userId!, req.params.folderId, name, deviceId) }); return; }
+      if (typeof parentId === "string") { res.json({ folder: await filesystemService.moveFolder(req.userId!, req.params.folderId, parentId, deviceId) }); return; }
+      res.status(400).json({ error: { code: "INVALID_INPUT", message: "name or parentId is required" } });
+    } catch (error) { next(error); }
+  });
   router.post("/files", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
       const folderId = typeof req.query.folderId === "string" ? req.query.folderId : undefined;
@@ -107,6 +116,15 @@ export function createApiRouter(): Router {
       const sizeBytes = lengthHeader ? Number(lengthHeader) : NaN;
       if (!folderId || !name || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "folderId, name, and a valid Content-Length are required" } }); return; }
       res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id") }) });
+    } catch (error) { next(error); }
+  });
+  router.patch("/files/:fileId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const { name, folderId, deviceId } = req.body as { name?: string; folderId?: string; deviceId?: string };
+      if (typeof name === "string" && folderId) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "Choose either name or folderId" } }); return; }
+      if (typeof name === "string") { res.json({ file: await filesystemService.renameFile(req.userId!, req.params.fileId, name, deviceId) }); return; }
+      if (typeof folderId === "string") { res.json({ file: await filesystemService.moveFile(req.userId!, req.params.fileId, folderId, deviceId) }); return; }
+      res.status(400).json({ error: { code: "INVALID_INPUT", message: "name or folderId is required" } });
     } catch (error) { next(error); }
   });
   router.get("/files/:fileId/content", requireAuth, async (req: AuthenticatedRequest, res, next) => {
