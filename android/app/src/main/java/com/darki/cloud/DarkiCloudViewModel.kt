@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import java.io.File
 import java.io.OutputStream
 
 class DarkiCloudViewModel(
@@ -38,8 +37,8 @@ class DarkiCloudViewModel(
     val isUploading: Flow<Boolean> = _isUploading
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: Flow<Boolean> = _isDownloading
-    private val _previewUri = MutableStateFlow<Uri?>(null)
-    val previewUri: Flow<Uri?> = _previewUri
+    private val _previewFileId = MutableStateFlow<String?>(null)
+    val previewFileId: Flow<String?> = _previewFileId
     private val _previewMimeType = MutableStateFlow<String?>(null)
     val previewMimeType: Flow<String?> = _previewMimeType
     private val _previewName = MutableStateFlow<String?>(null)
@@ -69,7 +68,8 @@ class DarkiCloudViewModel(
     fun logout() {
         val token = sessionStore.token
         viewModelScope.launch {
-            repository.logout(token)
+            runCatching { repository.logout(token) }
+            closePreview()
             sessionStore.clear()
             _currentFolderId.value = null
             _folderStack.value = emptyList()
@@ -89,7 +89,9 @@ class DarkiCloudViewModel(
                 ensureDeviceAndSync(token)
             }.onFailure { error ->
                 if (error is DarkiCloudApiException && error.statusCode == 401) {
-                    sessionStore.clear(); _isAuthenticated.value = false
+                    closePreview()
+                    sessionStore.clear()
+                    _isAuthenticated.value = false
                 }
                 _error.value = error.message ?: "Unable to synchronize cloud data"
             }
@@ -169,25 +171,17 @@ class DarkiCloudViewModel(
     }
 
     fun previewFile(file: FileEntity) {
-        val token = sessionStore.token ?: return
-        viewModelScope.launch {
-            _isDownloading.value = true
-            _error.value = null
-            runCatching {
-                val extension = file.name.substringAfterLast('.', "bin").lowercase().replace(Regex("[^a-z0-9]"), "")
-                val cached = File.createTempFile("darki-preview-", ".$extension")
-                cached.outputStream().use { output -> repository.downloadFile(token, file.id, output) }
-                _previewUri.value = Uri.fromFile(cached)
-                _previewMimeType.value = file.mimeType ?: guessMimeType(file.name)
-                _previewName.value = file.name
-            }.onFailure { _error.value = it.message ?: "Unable to preview file" }
-            _isDownloading.value = false
-        }
+        if (sessionStore.token == null) return
+        _error.value = null
+        _previewFileId.value = file.id
+        _previewMimeType.value = file.mimeType ?: guessMimeType(file.name)
+        _previewName.value = file.name
     }
 
+    fun previewToken(): String? = sessionStore.token
+
     fun closePreview() {
-        _previewUri.value?.path?.let { runCatching { File(it).delete() } }
-        _previewUri.value = null
+        _previewFileId.value = null
         _previewMimeType.value = null
         _previewName.value = null
     }
@@ -198,6 +192,7 @@ class DarkiCloudViewModel(
         "gif" -> "image/gif"
         "webp" -> "image/webp"
         "bmp" -> "image/bmp"
+        "svg" -> "image/svg+xml"
         "mp4" -> "video/mp4"
         "mkv" -> "video/x-matroska"
         "webm" -> "video/webm"
@@ -210,6 +205,11 @@ class DarkiCloudViewModel(
         val deviceId = sessionStore.deviceId ?: repository.registerDevice(token, "${Build.MANUFACTURER} ${Build.MODEL}", "Android ${Build.VERSION.RELEASE}").also { sessionStore.deviceId = it.id }.id
         val nextCursor = repository.sync(token, deviceId, sessionStore.cursor)
         sessionStore.cursor = nextCursor
+    }
+
+    override fun onCleared() {
+        closePreview()
+        super.onCleared()
     }
 
     companion object {
