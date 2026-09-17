@@ -18,6 +18,9 @@ interface CloudDao {
     @Query("SELECT * FROM files WHERE folderId = :folderId AND deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     fun observeFiles(folderId: String): Flow<List<FileEntity>>
 
+    @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY modifiedAt DESC")
+    fun observeDeletedFiles(): Flow<List<FileEntity>>
+
     @Query("UPDATE devices SET syncCursor = :cursor WHERE id = :deviceId")
     suspend fun updateCursor(deviceId: String, cursor: Long)
 
