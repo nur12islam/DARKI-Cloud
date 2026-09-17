@@ -2,12 +2,14 @@ package com.darki.cloud.data.api
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.InputStream
+import java.io.OutputStream
 
 class DarkiCloudApi(
     baseUrl: String,
@@ -49,6 +51,29 @@ class DarkiCloudApi(
 
     suspend fun restoreFile(token: String, fileId: String, deviceId: String): JSONObject =
         postJson("/api/v1/files/$fileId/restore", token, JSONObject().put("deviceId", deviceId))
+
+    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, input: InputStream): JSONObject = withContext(Dispatchers.IO) {
+        val body = object : RequestBody() {
+            override fun contentType() = (mimeType ?: "application/octet-stream").toMediaType()
+            override fun contentLength() = sizeBytes
+            override fun writeTo(sink: okio.BufferedSink) {
+                input.use { source -> source.copyTo(sink.outputStream()) }
+            }
+        }
+        val url = baseUrl.newBuilder().addPathSegments("api/v1/files").apply {
+            addQueryParameter("folderId", folderId)
+            addQueryParameter("name", name)
+        }.build()
+        execute(Request.Builder().url(url).post(body).header("X-Device-Id", deviceId).bearer(token).build())
+    }
+
+    suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(baseUrl.newBuilder().addPathSegments("api/v1/files/$fileId/content").build()).get().bearer(token).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty())
+            response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response")
+        }
+    }
 
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
