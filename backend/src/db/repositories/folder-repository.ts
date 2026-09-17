@@ -31,6 +31,17 @@ export class FolderRepository {
     return result.rows;
   }
 
+  async searchByName(userId: string, query: string, limit: number): Promise<FolderRecord[]> {
+    const result = await this.db.query<FolderRecord>(
+      `SELECT id, user_id AS "userId", parent_id AS "parentId", name,
+              created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"
+         FROM folders
+        WHERE user_id = $1 AND deleted_at IS NULL AND name ILIKE $2
+        ORDER BY lower(name), id
+        LIMIT $3`, [userId, `%${query}%`, limit]);
+    return result.rows;
+  }
+
   async create(userId: string, parentId: string | null, name: string): Promise<FolderRecord> {
     const result = await this.db.query<FolderRecord>(
       `INSERT INTO folders (user_id, parent_id, name) VALUES ($1, $2, $3)
