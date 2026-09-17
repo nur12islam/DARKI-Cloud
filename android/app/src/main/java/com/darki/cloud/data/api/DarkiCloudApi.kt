@@ -29,17 +29,51 @@ class DarkiCloudApi(
     }
     suspend fun getFolder(token: String, folderId: String): JSONObject = get("/api/v1/folders/$folderId", token)
 
+    suspend fun createFolder(token: String, parentId: String, name: String, deviceId: String): JSONObject =
+        postJson("/api/v1/folders", token, JSONObject().apply { put("parentId", parentId); put("name", name); put("deviceId", deviceId) })
+
+    suspend fun renameFolder(token: String, folderId: String, name: String, deviceId: String): JSONObject =
+        patchJson("/api/v1/folders/$folderId", token, JSONObject().apply { put("name", name); put("deviceId", deviceId) })
+
+    suspend fun moveFolder(token: String, folderId: String, parentId: String, deviceId: String): JSONObject =
+        patchJson("/api/v1/folders/$folderId", token, JSONObject().apply { put("parentId", parentId); put("deviceId", deviceId) })
+
+    suspend fun renameFile(token: String, fileId: String, name: String, deviceId: String): JSONObject =
+        patchJson("/api/v1/files/$fileId", token, JSONObject().apply { put("name", name); put("deviceId", deviceId) })
+
+    suspend fun moveFile(token: String, fileId: String, folderId: String, deviceId: String): JSONObject =
+        patchJson("/api/v1/files/$fileId", token, JSONObject().apply { put("folderId", folderId); put("deviceId", deviceId) })
+
+    suspend fun deleteFile(token: String, fileId: String, deviceId: String): JSONObject =
+        delete("/api/v1/files/$fileId", token, mapOf("deviceId" to deviceId))
+
+    suspend fun restoreFile(token: String, fileId: String, deviceId: String): JSONObject =
+        postJson("/api/v1/files/$fileId/restore", token, JSONObject().put("deviceId", deviceId))
+
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
         query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
         execute(Request.Builder().url(urlBuilder.build()).get().apply { bearer(token) }.build())
     }
+
     private suspend fun postJson(path: String, token: String?, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val requestBody = body.toString().toRequestBody("application/json".toMediaType())
         val builder = Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).post(requestBody)
         if (token != null) builder.bearer(token)
         execute(builder.build())
     }
+
+    private suspend fun patchJson(path: String, token: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+        execute(Request.Builder().url(baseUrl.newBuilder().addPathSegments(path.removePrefix("/")).build()).patch(requestBody).bearer(token).build())
+    }
+
+    private suspend fun delete(path: String, token: String, query: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
+        val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/"))
+        query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }
+        execute(Request.Builder().url(urlBuilder.build()).delete().bearer(token).build())
+    }
+
     private fun execute(request: Request): JSONObject {
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
@@ -47,6 +81,7 @@ class DarkiCloudApi(
             return if (text.isBlank()) JSONObject() else JSONObject(text)
         }
     }
+
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
 }
 
