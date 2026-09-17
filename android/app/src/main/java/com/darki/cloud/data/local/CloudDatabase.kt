@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [UserEntity::class, DeviceEntity::class, FolderEntity::class, FileEntity::class],
-    version = 1,
+    entities = [UserEntity::class, DeviceEntity::class, FolderEntity::class, FileEntity::class, TransferEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class CloudDatabase : RoomDatabase() {
