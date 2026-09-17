@@ -24,7 +24,9 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     private val _currentFolderId = MutableStateFlow(sessionStore.rootFolderId); val currentFolderId: Flow<String?> = _currentFolderId
     private val _folderStack = MutableStateFlow<List<FolderEntity>>(emptyList()); val folderStack: Flow<List<FolderEntity>> = _folderStack
     val folders: Flow<List<FolderEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFolders(id) }
+    val allFolders: Flow<List<FolderEntity>> = repository.observeAllFolders()
     val files: Flow<List<FileEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFiles(id) }
+    val deletedFiles: Flow<List<FileEntity>> = repository.observeDeletedFiles()
     private val _isRefreshing = MutableStateFlow(false); val isRefreshing: Flow<Boolean> = _isRefreshing
     private val _isUploading = MutableStateFlow(false); val isUploading: Flow<Boolean> = _isUploading
     private val _isDownloading = MutableStateFlow(false); val isDownloading: Flow<Boolean> = _isDownloading
@@ -33,7 +35,6 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     private val _previewName = MutableStateFlow<String?>(null); val previewName: Flow<String?> = _previewName
     private val _error = MutableStateFlow<String?>(null); val error: Flow<String?> = _error
     init { refreshRoot() }
-
     fun completeTelegramLogin(code: String) { viewModelScope.launch { _error.value = null; runCatching { val response = repository.exchangeTelegramLogin(code); sessionStore.token = response.getString("token"); sessionStore.userId = response.getJSONObject("user").getString("id"); val root = repository.loadRoot(sessionStore.token!!); sessionStore.rootFolderId = root.id; _currentFolderId.value = root.id; ensureDeviceAndSync(sessionStore.token!!); _isAuthenticated.value = true }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" } } }
     fun logout() { val token = sessionStore.token; viewModelScope.launch { runCatching { repository.logout(token) }; closePreview(); sessionStore.clear(); _currentFolderId.value = null; _folderStack.value = emptyList(); _isAuthenticated.value = false } }
     fun refreshRoot() { val token = sessionStore.token ?: return; viewModelScope.launch { _isRefreshing.value = true; _error.value = null; runCatching { val root = repository.loadRoot(token); sessionStore.rootFolderId = root.id; if (_currentFolderId.value == null) _currentFolderId.value = root.id; ensureDeviceAndSync(token) }.onFailure { error -> if (error is DarkiCloudApiException && error.statusCode == 401) { closePreview(); sessionStore.clear(); _isAuthenticated.value = false }; _error.value = error.message ?: "Unable to synchronize cloud data" }; _isRefreshing.value = false } }
