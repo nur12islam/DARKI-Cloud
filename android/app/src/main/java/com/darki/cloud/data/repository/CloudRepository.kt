@@ -49,33 +49,35 @@ class CloudRepository(private val api: DarkiCloudApi, private val dao: CloudDao)
         val payload = change.optJSONObject("payload") ?: JSONObject()
         when (entityType to operation) {
             "folder" to "create", "folder" to "update", "folder" to "move" -> refreshFolderEntity(token, entityId)
-            "file" to "create", "file" to "update", "file" to "move" -> refreshFileEntity(token, entityId)
-            "file" to "delete" -> {
-                val existing = dao.findFileById(entityId)
-                if (existing != null) dao.markFileDeleted(entityId, System.currentTimeMillis()) else refreshFileEntity(token, entityId)
-            }
-            "file" to "restore" -> {
-                val existing = dao.findFileById(entityId)
-                if (existing != null) dao.markFileRestored(entityId) else refreshFileEntity(token, entityId)
-            }
+            "file" to "create", "file" to "update", "file" to "move" -> refreshFileEntity(token, entityId, payload)
+            "file" to "delete" -> dao.findFileById(entityId)?.let { dao.markFileDeleted(entityId, System.currentTimeMillis()) } ?: refreshFileEntity(token, entityId, payload)
+            "file" to "restore" -> dao.findFileById(entityId)?.let { dao.markFileRestored(entityId) } ?: refreshFileEntity(token, entityId, payload)
             else -> refreshByPayload(token, entityType, entityId, payload)
         }
     }
 
     private suspend fun refreshFolderEntity(token: String, folderId: String) {
         runCatching { api.getFolder(token, folderId).getJSONObject("folder").let { dao.upsertFolders(listOf(it.toFolderEntity(it.getString("userId")))) } }
-            .onFailure { dao.findFolderById(folderId)?.let { current -> dao.upsertFolders(listOf(current.copy(deletedAt = System.currentTimeMillis()))) } }
+            .onFailure { dao.findFolderById(folderId)?.let { dao.upsertFolders(listOf(it.copy(deletedAt = System.currentTimeMillis()))) } }
     }
 
-    private suspend fun refreshFileEntity(token: String, fileId: String) {
-        runCatching { api.getFolder(token, dao.findFileById(fileId)?.folderId ?: return).let { response -> val files = response.optJSONArray("files") ?: return; for (i in 0 until files.length()) { val file = files.getJSONObject(i); if (file.optString("id") == fileId) { dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId")))); return } } } }
-            .onFailure { }
+    private suspend fun refreshFileEntity(token: String, fileId: String, payload: JSONObject = JSONObject()) {
+        val folderId = dao.findFileById(fileId)?.folderId ?: payload.optString("folderId").takeIf { it.isNotBlank() }
+        if (folderId == null) return
+        runCatching {
+            val response = api.getFolder(token, folderId)
+            val files = response.optJSONArray("files") ?: return@runCatching
+            for (i in 0 until files.length()) {
+                val file = files.getJSONObject(i)
+                if (file.optString("id") == fileId) { dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId")))); return@runCatching }
+            }
+        }
     }
 
     private suspend fun refreshByPayload(token: String, entityType: String, entityId: String, payload: JSONObject) {
         when (entityType) {
             "folder" -> refreshFolderEntity(token, entityId)
-            "file" -> refreshFileEntity(token, entityId)
+            "file" -> refreshFileEntity(token, entityId, payload)
         }
     }
 
