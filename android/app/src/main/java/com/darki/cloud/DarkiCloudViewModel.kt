@@ -71,7 +71,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
         val transfer = TransferEntity(UUID.randomUUID().toString(), "download", null, file.id, null, file.name, file.mimeType, file.sizeBytes, destination.toString(), "queued", 0, null, now, now)
         viewModelScope.launch { _error.value = null; runCatching { repository.enqueueTransfer(transfer); TransferScheduler.enqueue(appContext, transfer) }.onFailure { _error.value = it.message ?: "Unable to queue download" } }
     }
-    fun retryTransfer(transfer: TransferEntity) { val reset = transfer.copy(status = "queued", attempts = 0, lastError = null, updatedAt = System.currentTimeMillis()); viewModelScope.launch { runCatching { repository.enqueueTransfer(reset); TransferScheduler.enqueue(appContext, reset) }.onFailure { _error.value = it.message ?: "Unable to retry transfer" } } }
+    fun retryTransfer(transfer: TransferEntity) { val reset = transfer.copy(status = "queued", attempts = 0, lastError = null, updatedAt = System.currentTimeMillis()); viewModelScope.launch { runCatching { repository.enqueueTransfer(reset); TransferScheduler.retry(appContext, reset) }.onFailure { _error.value = it.message ?: "Unable to retry transfer" } } }
     fun previewFile(file: FileEntity) { if (sessionStore.token == null) return; _error.value = null; _previewFileId.value = file.id; _previewMimeType.value = file.mimeType ?: guessMimeType(file.name); _previewName.value = file.name }
     fun previewToken(): String? = sessionStore.token
     fun closePreview() { _previewFileId.value = null; _previewMimeType.value = null; _previewName.value = null }
