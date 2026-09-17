@@ -21,9 +21,17 @@ class DarkiCloudViewModel(
 ) : ViewModel() {
     private val _isAuthenticated = MutableStateFlow(sessionStore.token != null)
     val isAuthenticated: Flow<Boolean> = _isAuthenticated
-    private val root: Flow<FolderEntity?> = repository.observeFolders(null).flatMapLatest { roots -> flowOf(roots.firstOrNull()) }
-    val folders: Flow<List<FolderEntity>> = root.flatMapLatest { rootFolder -> rootFolder?.let { repository.observeFolders(it.id) } ?: flowOf(emptyList()) }
-    val files: Flow<List<FileEntity>> = root.flatMapLatest { rootFolder -> rootFolder?.let { repository.observeFiles(it.id) } ?: flowOf(emptyList()) }
+    private val _currentFolderId = MutableStateFlow(sessionStore.rootFolderId)
+    val currentFolderId: Flow<String?> = _currentFolderId
+    private val _folderStack = MutableStateFlow<List<FolderEntity>>(emptyList())
+    val folderStack: Flow<List<FolderEntity>> = _folderStack
+    private val currentFolder: Flow<FolderEntity?> = _currentFolderId.flatMapLatest { id ->
+        if (id == null) flowOf(null) else repository.observeFolders(null).flatMapLatest { roots ->
+            if (roots.any { it.id == id }) flowOf(roots.first { it.id == id }) else flowOf(null)
+        }
+    }
+    val folders: Flow<List<FolderEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFolders(id) }
+    val files: Flow<List<FileEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFiles(id) }
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: Flow<Boolean> = _isRefreshing
     private val _error = MutableStateFlow<String?>(null)
@@ -41,6 +49,7 @@ class DarkiCloudViewModel(
                 sessionStore.userId = response.getJSONObject("user").getString("id")
                 val rootFolder = repository.loadRoot(token)
                 sessionStore.rootFolderId = rootFolder.id
+                _currentFolderId.value = rootFolder.id
                 ensureDeviceAndSync(token)
                 _isAuthenticated.value = true
             }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" }
@@ -52,6 +61,8 @@ class DarkiCloudViewModel(
         viewModelScope.launch {
             repository.logout(token)
             sessionStore.clear()
+            _currentFolderId.value = null
+            _folderStack.value = emptyList()
             _isAuthenticated.value = false
         }
     }
@@ -61,14 +72,46 @@ class DarkiCloudViewModel(
         viewModelScope.launch {
             _isRefreshing.value = true
             _error.value = null
-            runCatching { ensureDeviceAndSync(token) }
-                .onFailure { error ->
-                    if (error is DarkiCloudApiException && error.statusCode == 401) {
-                        sessionStore.clear(); _isAuthenticated.value = false
-                    }
-                    _error.value = error.message ?: "Unable to synchronize cloud data"
+            runCatching {
+                val root = repository.loadRoot(token)
+                sessionStore.rootFolderId = root.id
+                if (_currentFolderId.value == null) _currentFolderId.value = root.id
+                ensureDeviceAndSync(token)
+            }.onFailure { error ->
+                if (error is DarkiCloudApiException && error.statusCode == 401) {
+                    sessionStore.clear(); _isAuthenticated.value = false
                 }
+                _error.value = error.message ?: "Unable to synchronize cloud data"
+            }
             _isRefreshing.value = false
+        }
+    }
+
+    fun openFolder(folder: FolderEntity) {
+        viewModelScope.launch {
+            _folderStack.value = _folderStack.value + folder
+            _currentFolderId.value = folder.id
+            sessionStore.token?.let { runCatching { repository.loadFolder(it, folder.id) } }
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        val stack = _folderStack.value
+        if (stack.isEmpty()) return false
+        val next = stack.dropLast(1)
+        _folderStack.value = next
+        _currentFolderId.value = next.lastOrNull()?.id ?: sessionStore.rootFolderId
+        return true
+    }
+
+    fun createFolder(name: String) {
+        val token = sessionStore.token ?: return
+        val parentId = _currentFolderId.value ?: return
+        val deviceId = sessionStore.deviceId ?: return
+        viewModelScope.launch {
+            _error.value = null
+            runCatching { repository.createFolder(token, parentId, name, deviceId) }
+                .onFailure { _error.value = it.message ?: "Unable to create folder" }
         }
     }
 
