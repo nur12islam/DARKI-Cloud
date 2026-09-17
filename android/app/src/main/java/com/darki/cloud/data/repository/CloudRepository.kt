@@ -41,6 +41,42 @@ class CloudRepository(
         return entity
     }
 
+    suspend fun createFolder(token: String, parentId: String, name: String, deviceId: String): FolderEntity =
+        api.createFolder(token, parentId, name, deviceId).getJSONObject("folder").also { folder ->
+            val userId = folder.getString("userId")
+            dao.upsertFolders(listOf(folder.toFolderEntity(userId)))
+        }.toFolderEntity()
+
+    suspend fun renameFolder(token: String, folderId: String, name: String, deviceId: String): FolderEntity =
+        api.renameFolder(token, folderId, name, deviceId).getJSONObject("folder").also { folder ->
+            dao.upsertFolders(listOf(folder.toFolderEntity(folder.getString("userId"))))
+        }.toFolderEntity()
+
+    suspend fun moveFolder(token: String, folderId: String, parentId: String, deviceId: String): FolderEntity =
+        api.moveFolder(token, folderId, parentId, deviceId).getJSONObject("folder").also { folder ->
+            dao.upsertFolders(listOf(folder.toFolderEntity(folder.getString("userId"))))
+        }.toFolderEntity()
+
+    suspend fun renameFile(token: String, fileId: String, name: String, deviceId: String): FileEntity =
+        api.renameFile(token, fileId, name, deviceId).getJSONObject("file").also { file ->
+            dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId"))))
+        }.toFileEntity()
+
+    suspend fun moveFile(token: String, fileId: String, folderId: String, deviceId: String): FileEntity =
+        api.moveFile(token, fileId, folderId, deviceId).getJSONObject("file").also { file ->
+            dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId"))))
+        }.toFileEntity()
+
+    suspend fun deleteFile(token: String, fileId: String, deviceId: String): FileEntity =
+        api.deleteFile(token, fileId, deviceId).getJSONObject("file").also { file ->
+            dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId"))))
+        }.toFileEntity()
+
+    suspend fun restoreFile(token: String, fileId: String, deviceId: String): FileEntity =
+        api.restoreFile(token, fileId, deviceId).getJSONObject("file").also { file ->
+            dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId"))))
+        }.toFileEntity()
+
     suspend fun sync(token: String, deviceId: String, cursor: String): String {
         var currentCursor = cursor
         do {
@@ -66,14 +102,19 @@ class CloudRepository(
         id = getString("id"), userId = userId, parentId = if (isNull("parentId")) null else getString("parentId"),
         name = getString("name"), createdAt = optTimestamp("createdAt"), modifiedAt = optTimestamp("modifiedAt"), deletedAt = optTimestamp("deletedAt"),
     )
+    private fun JSONObject.toFolderEntity() = FolderEntity(
+        id = getString("id"), userId = getString("userId"), parentId = if (isNull("parentId")) null else getString("parentId"),
+        name = getString("name"), createdAt = optTimestamp("createdAt"), modifiedAt = optTimestamp("modifiedAt"), deletedAt = optTimestamp("deletedAt"),
+    )
     private fun JSONObject.toFileEntity(userId: String) = FileEntity(
         id = getString("id"), userId = userId, folderId = getString("folderId"), storageObjectId = if (isNull("storageObjectId")) null else getString("storageObjectId"),
         name = getString("name"), mimeType = if (isNull("mimeType")) null else getString("mimeType"), sizeBytes = if (isNull("sizeBytes")) null else optLong("sizeBytes"),
         sha256 = if (isNull("sha256")) null else getString("sha256"), createdAt = optTimestamp("createdAt"), modifiedAt = optTimestamp("modifiedAt"), deletedAt = optTimestamp("deletedAt"),
     )
-    private fun JSONObject.toDeviceEntity() = DeviceEntity(
-        id = getString("id"), userId = getString("userId"), name = getString("deviceName"), platform = getString("platform"),
-        lastSeenAt = optTimestamp("lastSeenAt"), syncCursor = optLong("syncCursor", 0L),
+    private fun JSONObject.toFileEntity() = FileEntity(
+        id = getString("id"), userId = getString("userId"), folderId = getString("folderId"), storageObjectId = if (isNull("storageObjectId")) null else getString("storageObjectId"),
+        name = getString("name"), mimeType = if (isNull("mimeType")) null else getString("mimeType"), sizeBytes = if (isNull("sizeBytes")) null else optLong("sizeBytes"),
+        sha256 = if (isNull("sha256")) null else getString("sha256"), createdAt = optTimestamp("createdAt"), modifiedAt = optTimestamp("modifiedAt"), deletedAt = optTimestamp("deletedAt"),
     )
     private fun JSONObject.optTimestamp(name: String): Long? = if (isNull(name)) null else runCatching { java.time.Instant.parse(optString(name)).toEpochMilli() }.getOrNull()
 }
