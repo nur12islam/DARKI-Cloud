@@ -26,6 +26,20 @@ export class SyncChangeRepository {
     return result.rows[0]!;
   }
 
+  async findByOperationId(userId: string, operationId: string): Promise<SyncChangeRecord | null> {
+    const result = await this.db.query<SyncChangeRecord>(
+      `SELECT sequence, user_id AS "userId", device_id AS "deviceId",
+              operation_id AS "operationId", entity_type AS "entityType",
+              entity_id AS "entityId", operation, payload,
+              created_at AS "createdAt"
+         FROM sync_changes
+        WHERE user_id = $1 AND operation_id = $2
+        LIMIT 1`,
+      [userId, operationId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async listAfter(userId: string, cursor: string, limit = 100): Promise<SyncChangeRecord[]> {
     const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
     const result = await this.db.query<SyncChangeRecord>(
