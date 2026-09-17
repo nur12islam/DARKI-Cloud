@@ -6,12 +6,12 @@ import androidx.work.WorkerParameters
 import com.darki.cloud.BuildConfig
 import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDatabase
-import com.darki.cloud.data.local.TransferEntity
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
@@ -26,6 +26,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         val api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         val repository = CloudRepository(api, dao)
         dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, updatedAt = System.currentTimeMillis()))
+        var temporaryDownload: File? = null
         try {
             when (transfer.type) {
                 "upload" -> {
@@ -39,8 +40,11 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                 "download" -> {
                     val fileId = transfer.fileId ?: error("Missing download file")
                     val destination = transfer.destinationUri?.let(android.net.Uri::parse) ?: error("Missing download destination")
-                    val output = applicationContext.contentResolver.openOutputStream(destination) ?: error("Unable to open download destination")
-                    output.use { repository.downloadFile(token, fileId, it) }
+                    temporaryDownload = File.createTempFile("darki-download-", ".part", applicationContext.cacheDir)
+                    FileOutputStream(temporaryDownload).use { repository.downloadFile(token, fileId, it) }
+                    applicationContext.contentResolver.openOutputStream(destination)?.use { output ->
+                        temporaryDownload!!.inputStream().use { input -> input.copyTo(output) }
+                    } ?: error("Unable to open download destination")
                 }
                 else -> error("Unknown transfer type")
             }
@@ -52,6 +56,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
             dao.upsertTransfer(transfer.copy(status = if (terminal) "failed" else "queued", attempts = attempts, lastError = error.message, updatedAt = System.currentTimeMillis()))
             if (terminal) Result.failure() else Result.retry()
         } finally {
+            temporaryDownload?.delete()
             db.close()
         }
     }
