@@ -1,13 +1,16 @@
 package com.darki.cloud
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,26 +61,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import androidx.compose.ui.viewinterop.AndroidView
-import android.view.ViewGroup
-import android.widget.ImageView
-import android.graphics.BitmapFactory
-import androidx.compose.ui.layout.ContentScale
 import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDatabase
-import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
+import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
 import okhttp3.OkHttpClient
 
@@ -186,7 +187,6 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
 
 @Composable
 private fun MediaPreviewDialog(uri: Uri, mimeType: String, name: String, onDismiss: () -> Unit) {
-    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(name, Modifier.weight(1f), maxLines = 1); IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } } },
@@ -201,37 +201,38 @@ private fun MediaPreviewDialog(uri: Uri, mimeType: String, name: String, onDismi
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = mimeType
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(intent, "Share $name"))
-            }) { Text("Share") }
-        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
 }
 
 @Composable
 private fun ImagePreview(uri: Uri) {
     val bitmap = remember(uri) { BitmapFactory.decodeFile(uri.path) }
-    androidx.compose.foundation.Image(
-        bitmap = bitmap?.asImageBitmap() ?: return,
-        contentDescription = null,
-        modifier = Modifier.fillMaxWidth().height(420.dp),
-        contentScale = ContentScale.Fit,
-    )
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxWidth().height(420.dp),
+            contentScale = ContentScale.Fit,
+        )
+    } else {
+        Text("Unable to render this image")
+    }
 }
 
 @Composable
 private fun VideoPreview(uri: Uri) {
     val context = LocalContext.current
-    val player = remember(uri) { ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(uri)); prepare(); playWhenReady = true } }
-    androidx.compose.runtime.DisposableEffect(player) { onDispose { player.release() } }
+    val player = remember(uri) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(player) { onDispose { player.release() } }
     AndroidView(
-        factory = { PlayerView(it).apply { this.player = player; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } },
+        factory = { PlayerView(it).apply { player = player; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } },
         modifier = Modifier.fillMaxWidth().height(300.dp),
     )
 }
