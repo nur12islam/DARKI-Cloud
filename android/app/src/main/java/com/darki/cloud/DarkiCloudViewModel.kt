@@ -11,13 +11,16 @@ import com.darki.cloud.data.api.DarkiCloudApiException
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
+import com.darki.cloud.data.local.TransferEntity
 import com.darki.cloud.data.repository.CloudRepository
+import com.darki.cloud.data.transfer.TransferScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.io.OutputStream
+import java.util.UUID
 
 class DarkiCloudViewModel(private val repository: CloudRepository, private val sessionStore: SessionStore) : ViewModel() {
     private val _isAuthenticated = MutableStateFlow(sessionStore.token != null); val isAuthenticated: Flow<Boolean> = _isAuthenticated
@@ -27,6 +30,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     val allFolders: Flow<List<FolderEntity>> = repository.observeAllFolders()
     val files: Flow<List<FileEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFiles(id) }
     val deletedFiles: Flow<List<FileEntity>> = repository.observeDeletedFiles()
+    val transfers: Flow<List<TransferEntity>> = repository.observePendingTransfers()
     private val _isRefreshing = MutableStateFlow(false); val isRefreshing: Flow<Boolean> = _isRefreshing
     private val _isUploading = MutableStateFlow(false); val isUploading: Flow<Boolean> = _isUploading
     private val _isDownloading = MutableStateFlow(false); val isDownloading: Flow<Boolean> = _isDownloading
@@ -47,8 +51,23 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     fun moveFile(file: FileEntity, folderId: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to move file") { repository.moveFile(token, file.id, folderId, device); refreshCurrentFolder(token) } }
     fun deleteFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to delete file") { repository.deleteFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
     fun restoreFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to restore file") { repository.restoreFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
-    fun uploadFile(uri: Uri, resolver: ContentResolver) { val token = sessionStore.token ?: return; val folderId = _currentFolderId.value ?: return; val deviceId = sessionStore.deviceId ?: return; val metadata = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor -> if (!cursor.moveToFirst()) null else { val ni = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); val si = cursor.getColumnIndex(OpenableColumns.SIZE); val name = if (ni >= 0) cursor.getString(ni) else null; val size = if (si >= 0 && !cursor.isNull(si)) cursor.getLong(si) else null; if (name.isNullOrBlank() || size == null || size < 0) null else name to size } }; if (metadata == null) { _error.value = "Unable to read the selected file"; return }; val (name, size) = metadata; viewModelScope.launch { _isUploading.value = true; _error.value = null; runCatching { val input = resolver.openInputStream(uri) ?: error("Unable to open selected file"); repository.uploadFile(token, folderId, name, resolver.getType(uri), size, deviceId, input); repository.loadFolder(token, folderId); ensureDeviceAndSync(token) }.onFailure { _error.value = it.message ?: "Unable to upload file" }; _isUploading.value = false } }
-    fun downloadFile(file: FileEntity, resolver: ContentResolver, output: OutputStream) { val token = sessionStore.token ?: return; viewModelScope.launch { _isDownloading.value = true; _error.value = null; runCatching { repository.downloadFile(token, file.id, output) }.onFailure { _error.value = it.message ?: "Unable to download file" }; runCatching { output.close() }; _isDownloading.value = false } }
+    fun uploadFile(uri: Uri, resolver: ContentResolver) {
+        val folderId = _currentFolderId.value ?: return
+        val metadata = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor -> if (!cursor.moveToFirst()) null else { val ni = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); val si = cursor.getColumnIndex(OpenableColumns.SIZE); val name = if (ni >= 0) cursor.getString(ni) else null; val size = if (si >= 0 && !cursor.isNull(si)) cursor.getLong(si) else null; if (name.isNullOrBlank() || size == null || size < 0) null else name to size } }
+        if (metadata == null) { _error.value = "Unable to read the selected file"; return }
+        runCatching { resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val (name, size) = metadata
+        val now = System.currentTimeMillis()
+        val transfer = TransferEntity(UUID.randomUUID().toString(), "upload", uri.toString(), null, folderId, name, resolver.getType(uri), size, null, "queued", 0, null, now, now)
+        viewModelScope.launch { _error.value = null; runCatching { repository.enqueueTransfer(transfer); TransferScheduler.enqueue(getApplicationContextCompat(), transfer) }.onFailure { _error.value = it.message ?: "Unable to queue upload" } }
+    }
+    fun enqueueDownload(file: FileEntity, destination: Uri, resolver: ContentResolver) {
+        runCatching { resolver.takePersistableUriPermission(destination, android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        val now = System.currentTimeMillis()
+        val transfer = TransferEntity(UUID.randomUUID().toString(), "download", null, file.id, null, file.name, file.mimeType, file.sizeBytes, destination.toString(), "queued", 0, null, now, now)
+        viewModelScope.launch { _error.value = null; runCatching { repository.enqueueTransfer(transfer); TransferScheduler.enqueue(getApplicationContextCompat(), transfer) }.onFailure { _error.value = it.message ?: "Unable to queue download" } }
+    }
+    fun retryTransfer(transfer: TransferEntity) { val reset = transfer.copy(status = "queued", attempts = 0, lastError = null, updatedAt = System.currentTimeMillis()); viewModelScope.launch { runCatching { repository.enqueueTransfer(reset); TransferScheduler.enqueue(getApplicationContextCompat(), reset) }.onFailure { _error.value = it.message ?: "Unable to retry transfer" } } }
     fun previewFile(file: FileEntity) { if (sessionStore.token == null) return; _error.value = null; _previewFileId.value = file.id; _previewMimeType.value = file.mimeType ?: guessMimeType(file.name); _previewName.value = file.name }
     fun previewToken(): String? = sessionStore.token
     fun closePreview() { _previewFileId.value = null; _previewMimeType.value = null; _previewName.value = null }
@@ -56,6 +75,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     private suspend fun refreshCurrentFolder(token: String) { _currentFolderId.value?.let { repository.loadFolder(token, it) } }
     private fun guessMimeType(name: String): String? = when (name.substringAfterLast('.', "").lowercase()) { "jpg", "jpeg" -> "image/jpeg"; "png" -> "image/png"; "gif" -> "image/gif"; "webp" -> "image/webp"; "bmp" -> "image/bmp"; "svg" -> "image/svg+xml"; "mp4" -> "video/mp4"; "mkv" -> "video/x-matroska"; "webm" -> "video/webm"; "mov" -> "video/quicktime"; "avi" -> "video/x-msvideo"; else -> null }
     private suspend fun ensureDeviceAndSync(token: String) { val deviceId = sessionStore.deviceId ?: repository.registerDevice(token, "${Build.MANUFACTURER} ${Build.MODEL}", "Android ${Build.VERSION.RELEASE}").also { sessionStore.deviceId = it.id }.id; val nextCursor = repository.sync(token, deviceId, sessionStore.cursor); sessionStore.cursor = nextCursor }
+    private fun getApplicationContextCompat(): android.content.Context = android.app.ApplicationProviderHolder.context
     override fun onCleared() { closePreview(); super.onCleared() }
     companion object { fun factory(repository: CloudRepository, sessionStore: SessionStore): ViewModelProvider.Factory = object : ViewModelProvider.Factory { @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = DarkiCloudViewModel(repository, sessionStore) as T } }
 }
