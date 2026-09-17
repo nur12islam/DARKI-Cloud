@@ -71,6 +71,12 @@ export class FileService {
     if (!folder || folder.deletedAt) throw new NotFoundError("Folder not found");
 
     const operationId = input.operationId ?? randomUUID();
+    const previousChange = await new SyncChangeRepository(db).findByOperationId(input.userId, operationId);
+    if (previousChange?.entityType === "file" && previousChange.operation === "create") {
+      const existing = await new FileRepository(db).findByIdForUser(previousChange.entityId, input.userId);
+      if (existing) return existing;
+    }
+
     let stored;
     try {
       stored = await this.storage.putObject({
@@ -99,6 +105,12 @@ export class FileService {
         if (!ownedFolder || ownedFolder.deletedAt) throw new NotFoundError("Folder not found");
         if (input.deviceId && !(await devices!.findByIdForUser(input.deviceId, input.userId))) {
           throw new NotFoundError("Device not found");
+        }
+
+        const existingChange = await syncChanges.findByOperationId(input.userId, operationId);
+        if (existingChange?.entityType === "file" && existingChange.operation === "create") {
+          const existing = await files.findByIdForUser(existingChange.entityId, input.userId);
+          if (existing) return existing;
         }
 
         const object = await objects.create({
