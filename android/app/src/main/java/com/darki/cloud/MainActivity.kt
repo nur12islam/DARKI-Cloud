@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
     private var pendingAuthCode: String? = null
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); sessionStore = SessionStore(applicationContext); val db = CloudDatabase.create(applicationContext); api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient()); repository = CloudRepository(api, db.cloudDao()); pendingAuthCode = extractAuthCode(intent); render() }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); pendingAuthCode = extractAuthCode(intent); render() }
-    private fun render() { setContent { val vm: DarkiCloudViewModel = viewModel(factory = DarkiCloudViewModel.factory(repository, sessionStore)); DarkiCloudApp(vm, api, pendingAuthCode, ::openTelegramLogin) } }
+    private fun render() { setContent { val vm: DarkiCloudViewModel = viewModel(factory = DarkiCloudViewModel.factory(repository, sessionStore, applicationContext)); DarkiCloudApp(vm, api, pendingAuthCode, ::openTelegramLogin) } }
     private fun openTelegramLogin() = startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.telegramLoginUrl())))
     private fun extractAuthCode(intent: Intent?): String? { val uri = intent?.data ?: return null; if (uri.scheme != "darkicloud" || uri.host != "auth") return null; return uri.getQueryParameter("code")?.takeIf { it.isNotBlank() } }
 }
