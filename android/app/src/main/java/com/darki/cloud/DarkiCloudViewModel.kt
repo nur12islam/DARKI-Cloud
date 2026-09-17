@@ -1,6 +1,9 @@
 package com.darki.cloud
 
+import android.content.ContentResolver
+import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,6 +37,8 @@ class DarkiCloudViewModel(
     val files: Flow<List<FileEntity>> = _currentFolderId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else repository.observeFiles(id) }
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: Flow<Boolean> = _isRefreshing
+    private val _isUploading = MutableStateFlow(false)
+    val isUploading: Flow<Boolean> = _isUploading
     private val _error = MutableStateFlow<String?>(null)
     val error: Flow<String?> = _error
 
@@ -112,6 +117,37 @@ class DarkiCloudViewModel(
             _error.value = null
             runCatching { repository.createFolder(token, parentId, name, deviceId) }
                 .onFailure { _error.value = it.message ?: "Unable to create folder" }
+        }
+    }
+
+    fun uploadFile(uri: Uri, resolver: ContentResolver) {
+        val token = sessionStore.token ?: return
+        val folderId = _currentFolderId.value ?: return
+        val deviceId = sessionStore.deviceId ?: return
+        val metadata = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) null else {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                val name = if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex) else null
+                if (name.isNullOrBlank() || size == null || size < 0) null else name to size
+            }
+        }
+        if (metadata == null) {
+            _error.value = "Unable to read the selected file"
+            return
+        }
+        val (name, size) = metadata
+        viewModelScope.launch {
+            _isUploading.value = true
+            _error.value = null
+            runCatching {
+                val input = resolver.openInputStream(uri) ?: error("Unable to open selected file")
+                repository.uploadFile(token, folderId, name, resolver.getType(uri), size, deviceId, input)
+                repository.loadFolder(token, folderId)
+                ensureDeviceAndSync(token)
+            }.onFailure { _error.value = it.message ?: "Unable to upload file" }
+            _isUploading.value = false
         }
     }
 
