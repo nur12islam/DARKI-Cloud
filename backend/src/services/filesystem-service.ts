@@ -35,6 +35,18 @@ export class FilesystemService {
     return { folder, folders: children, files: childFiles };
   }
 
+  async search(userId: string, query: string, limit = 50) {
+    const normalized = query.trim();
+    if (normalized.length < 1) throw new ServiceError("Search query is required", "INVALID_INPUT", 400);
+    if (normalized.length > 200) throw new ServiceError("Search query is too long", "INVALID_INPUT", 400);
+    const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+    const [folders, files] = await Promise.all([
+      new FolderRepository(db).searchByName(userId, normalized, boundedLimit),
+      new FileRepository(db).searchByName(userId, normalized, boundedLimit),
+    ]);
+    return { query: normalized, folders, files };
+  }
+
   async createFolder(userId: string, parentId: string, name: string, deviceId?: string | null) {
     const normalizedName = validateName(name);
     return withTransaction(async (client) => {
