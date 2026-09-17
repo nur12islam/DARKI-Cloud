@@ -48,5 +48,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.7.2")
     ksp("androidx.room:room-compiler:2.7.2")
 
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
+    implementation("androidx.media3:media3-ui-compose-material3:1.11.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
