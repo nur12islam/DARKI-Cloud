@@ -1,5 +1,6 @@
 package com.darki.cloud.data.repository
 
+import com.darki.cloud.SearchResults
 import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDao
 import com.darki.cloud.data.local.DeviceEntity
@@ -19,6 +20,14 @@ class CloudRepository(private val api: DarkiCloudApi, private val dao: CloudDao)
     fun observePendingTransfers(): Flow<List<TransferEntity>> = dao.observePendingTransfers()
     suspend fun enqueueTransfer(transfer: TransferEntity) = dao.upsertTransfer(transfer)
     suspend fun exchangeTelegramLogin(code: String): JSONObject = api.exchangeTelegramLogin(code)
+    suspend fun search(token: String, query: String, limit: Int = 50): SearchResults {
+        val response = api.search(token, query, limit)
+        val foldersJson = response.optJSONArray("folders")
+        val filesJson = response.optJSONArray("files")
+        val folders = buildList { if (foldersJson != null) for (i in 0 until foldersJson.length()) { val item = foldersJson.getJSONObject(i); add(item.toFolderEntity(item.getString("userId"))) } }
+        val files = buildList { if (filesJson != null) for (i in 0 until filesJson.length()) { val item = filesJson.getJSONObject(i); add(item.toFileEntity(item.getString("userId"))) } }
+        return SearchResults(folders, files)
+    }
     suspend fun loadRoot(token: String): FolderEntity { val root = api.getRootFolder(token).getJSONObject("folder"); val entity = root.toFolderEntity(root.getString("userId")); dao.upsertFolders(listOf(entity)); loadFolder(token, entity.id); return entity }
     suspend fun loadFolder(token: String, folderId: String) { val response = api.getFolder(token, folderId); val folder = response.getJSONObject("folder"); val userId = folder.getString("userId"); dao.upsertFolders(listOf(folder.toFolderEntity(userId))); val folders = response.optJSONArray("folders"); dao.upsertFolders(buildList { if (folders != null) for (i in 0 until folders.length()) add(folders.getJSONObject(i).toFolderEntity(userId)) }); val files = response.optJSONArray("files"); dao.upsertFiles(buildList { if (files != null) for (i in 0 until files.length()) add(files.getJSONObject(i).toFileEntity(userId)) }) }
     suspend fun registerDevice(token: String, deviceName: String, platform: String): DeviceEntity = api.registerDevice(token, deviceName, platform).getJSONObject("device").toDeviceEntity().also { dao.upsertDevice(it) }
