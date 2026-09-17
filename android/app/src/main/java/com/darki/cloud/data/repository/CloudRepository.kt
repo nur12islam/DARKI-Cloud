@@ -28,7 +28,57 @@ class CloudRepository(private val api: DarkiCloudApi, private val dao: CloudDao)
     suspend fun moveFile(token: String, fileId: String, folderId: String, deviceId: String): FileEntity = api.moveFile(token, fileId, folderId, deviceId).getJSONObject("file").also { dao.upsertFiles(listOf(it.toFileEntity(it.getString("userId")))) }.toFileEntity()
     suspend fun deleteFile(token: String, fileId: String, deviceId: String): FileEntity = api.deleteFile(token, fileId, deviceId).getJSONObject("file").also { dao.upsertFiles(listOf(it.toFileEntity(it.getString("userId")))) }.toFileEntity()
     suspend fun restoreFile(token: String, fileId: String, deviceId: String): FileEntity = api.restoreFile(token, fileId, deviceId).getJSONObject("file").also { dao.upsertFiles(listOf(it.toFileEntity(it.getString("userId")))) }.toFileEntity()
-    suspend fun sync(token: String, deviceId: String, cursor: String): String { var current = cursor; do { val response = api.pullChanges(token, deviceId, current, 100); val next = response.optString("cursor", current); if (response.optJSONArray("changes")?.length()?.let { it > 0 } == true) loadRoot(token); if (next != current) { api.acknowledgeSync(token, deviceId, next); current = next }; if (!response.optBoolean("hasMore", false)) break } while (true); return current }
+
+    suspend fun sync(token: String, deviceId: String, cursor: String): String {
+        var current = cursor
+        do {
+            val response = api.pullChanges(token, deviceId, current, 100)
+            val changes = response.optJSONArray("changes")
+            if (changes != null) for (i in 0 until changes.length()) applySyncChange(token, changes.getJSONObject(i))
+            val next = response.optString("cursor", current)
+            if (next != current) { api.acknowledgeSync(token, deviceId, next); current = next }
+            if (!response.optBoolean("hasMore", false)) break
+        } while (true)
+        return current
+    }
+
+    private suspend fun applySyncChange(token: String, change: JSONObject) {
+        val entityType = change.optString("entityType")
+        val entityId = change.optString("entityId")
+        val operation = change.optString("operation")
+        val payload = change.optJSONObject("payload") ?: JSONObject()
+        when (entityType to operation) {
+            "folder" to "create", "folder" to "update", "folder" to "move" -> refreshFolderEntity(token, entityId)
+            "file" to "create", "file" to "update", "file" to "move" -> refreshFileEntity(token, entityId)
+            "file" to "delete" -> {
+                val existing = dao.findFileById(entityId)
+                if (existing != null) dao.markFileDeleted(entityId, System.currentTimeMillis()) else refreshFileEntity(token, entityId)
+            }
+            "file" to "restore" -> {
+                val existing = dao.findFileById(entityId)
+                if (existing != null) dao.markFileRestored(entityId) else refreshFileEntity(token, entityId)
+            }
+            else -> refreshByPayload(token, entityType, entityId, payload)
+        }
+    }
+
+    private suspend fun refreshFolderEntity(token: String, folderId: String) {
+        runCatching { api.getFolder(token, folderId).getJSONObject("folder").let { dao.upsertFolders(listOf(it.toFolderEntity(it.getString("userId")))) } }
+            .onFailure { dao.findFolderById(folderId)?.let { current -> dao.upsertFolders(listOf(current.copy(deletedAt = System.currentTimeMillis()))) } }
+    }
+
+    private suspend fun refreshFileEntity(token: String, fileId: String) {
+        runCatching { api.getFolder(token, dao.findFileById(fileId)?.folderId ?: return).let { response -> val files = response.optJSONArray("files") ?: return; for (i in 0 until files.length()) { val file = files.getJSONObject(i); if (file.optString("id") == fileId) { dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId")))); return } } } }
+            .onFailure { }
+    }
+
+    private suspend fun refreshByPayload(token: String, entityType: String, entityId: String, payload: JSONObject) {
+        when (entityType) {
+            "folder" -> refreshFolderEntity(token, entityId)
+            "file" -> refreshFileEntity(token, entityId)
+        }
+    }
+
     suspend fun logout(token: String?) { if (token != null) runCatching { api.logout(token) }; dao.clearFiles(); dao.clearFolders(); dao.clearDevices(); dao.clearUsers() }
     private fun JSONObject.toFolderEntity(userId: String) = FolderEntity(getString("id"), userId, if (isNull("parentId")) null else getString("parentId"), getString("name"), optTimestamp("createdAt"), optTimestamp("modifiedAt"), optTimestamp("deletedAt"))
     private fun JSONObject.toFolderEntity() = FolderEntity(getString("id"), getString("userId"), if (isNull("parentId")) null else getString("parentId"), getString("name"), optTimestamp("createdAt"), optTimestamp("modifiedAt"), optTimestamp("deletedAt"))
