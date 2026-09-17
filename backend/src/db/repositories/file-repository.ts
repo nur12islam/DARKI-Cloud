@@ -13,6 +13,11 @@ export class FileRepository {
     return result.rows;
   }
 
+  async searchByName(userId: string, query: string, limit: number): Promise<FileRecord[]> {
+    const result = await this.db.query<FileRecord>(`SELECT id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt" FROM files WHERE user_id = $1 AND deleted_at IS NULL AND name ILIKE $2 ORDER BY lower(name), id LIMIT $3`, [userId, `%${query}%`, limit]);
+    return result.rows;
+  }
+
   async create(input: { userId: string; folderId: string; name: string; mimeType?: string | null; sizeBytes?: string | null; sha256?: string | null; storageObjectId?: string | null }): Promise<FileRecord> {
     const result = await this.db.query<FileRecord>(`INSERT INTO files (user_id, folder_id, storage_object_id, name, mime_type, size_bytes, sha256) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`, [input.userId, input.folderId, input.storageObjectId ?? null, input.name, input.mimeType ?? null, input.sizeBytes ?? null, input.sha256 ?? null]);
     return result.rows[0]!;
