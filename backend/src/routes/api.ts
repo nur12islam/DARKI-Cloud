@@ -79,6 +79,15 @@ export function createApiRouter(): Router {
     } catch (error) { next(error); }
   });
 
+  router.get("/search", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try {
+      const query = typeof req.query.q === "string" ? req.query.q : "";
+      const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
+      if (!query.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "q and limit (1-100) are required" } }); return; }
+      res.json(await filesystemService.search(req.userId!, query, limit));
+    } catch (error) { next(error); }
+  });
+
   router.get("/storage/capabilities", requireAuth, async (_req, res, next) => {
     try { res.json({ provider: fileService.storageName, capabilities: await fileService.capabilities() }); } catch (error) { next(error); }
   });
