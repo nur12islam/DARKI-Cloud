@@ -7,6 +7,8 @@ import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
+import java.io.InputStream
+import java.io.OutputStream
 
 class CloudRepository(
     private val api: DarkiCloudApi,
@@ -40,6 +42,13 @@ class CloudRepository(
         dao.upsertDevice(entity)
         return entity
     }
+
+    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, input: InputStream): FileEntity =
+        api.uploadFile(token, folderId, name, mimeType, sizeBytes, deviceId, input).getJSONObject("file").also { file ->
+            dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId"))))
+        }.toFileEntity()
+
+    suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = api.downloadFile(token, fileId, output)
 
     suspend fun createFolder(token: String, parentId: String, name: String, deviceId: String): FolderEntity =
         api.createFolder(token, parentId, name, deviceId).getJSONObject("folder").also { folder ->
