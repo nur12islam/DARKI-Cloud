@@ -123,8 +123,9 @@ export function createApiRouter(): Router {
       const mimeType = req.header("content-type")?.split(";", 1)[0]?.trim() || null;
       const lengthHeader = req.header("content-length");
       const sizeBytes = lengthHeader ? Number(lengthHeader) : NaN;
+      const operationId = req.header("x-operation-id")?.trim() || undefined;
       if (!folderId || !name || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "folderId, name, and a valid Content-Length are required" } }); return; }
-      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id") }) });
+      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id"), operationId }) });
     } catch (error) { next(error); }
   });
   router.patch("/files/:fileId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
