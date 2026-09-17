@@ -1,6 +1,7 @@
 package com.darki.cloud
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
@@ -9,6 +10,7 @@ import androidx.activity.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,7 +83,11 @@ import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private lateinit var sessionStore: SessionStore
@@ -138,27 +146,13 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, api: DarkiCloudApi, au
             val stack by viewModel.folderStack.collectAsState(initial = emptyList())
             val context = LocalContext.current
             var showCreateFolder by remember { mutableStateOf(false) }
-            val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) viewModel.uploadFile(uri, context.contentResolver)
-            }
+            val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) viewModel.uploadFile(uri, context.contentResolver) }
 
             if (authenticated && stack.isNotEmpty()) BackHandler { viewModel.navigateBack() }
             if (previewFileId != null && previewMimeType != null) {
-                MediaPreviewDialog(
-                    api = api,
-                    token = viewModel.previewToken(),
-                    fileId = previewFileId!!,
-                    mimeType = previewMimeType!!,
-                    name = previewName ?: "Preview",
-                    onDismiss = viewModel::closePreview,
-                )
+                MediaPreviewDialog(api, viewModel.previewToken(), previewFileId!!, previewMimeType!!, previewName ?: "Preview", viewModel::closePreview)
             }
-            if (showCreateFolder) {
-                CreateFolderDialog(
-                    onDismiss = { showCreateFolder = false },
-                    onCreate = { name -> showCreateFolder = false; viewModel.createFolder(name) },
-                )
-            }
+            if (showCreateFolder) CreateFolderDialog({ showCreateFolder = false }) { name -> showCreateFolder = false; viewModel.createFolder(name) }
 
             Box(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize()) {
@@ -167,20 +161,10 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, api: DarkiCloudApi, au
                     else LoginContent(onLogin)
                 }
                 if (authenticated) {
-                    FloatingActionButton(
-                        onClick = { filePicker.launch(arrayOf("*/*")) },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-                        containerColor = Color(0xFF171717),
-                        contentColor = Color(0xFFB7F7FF),
-                    ) { if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, contentDescription = "Upload file") }
-                    if (!uploading) {
-                        FloatingActionButton(
-                            onClick = { showCreateFolder = true },
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp),
-                            containerColor = Color(0xFF171717),
-                            contentColor = Color(0xFFB7F7FF),
-                        ) { Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder") }
+                    FloatingActionButton(onClick = { filePicker.launch(arrayOf("*/*")) }, modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) {
+                        if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, "Upload file")
                     }
+                    if (!uploading) FloatingActionButton(onClick = { showCreateFolder = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { Icon(Icons.Default.CreateNewFolder, "New folder") }
                 }
             }
         }
@@ -193,16 +177,11 @@ private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: Strin
         onDismissRequest = onDismiss,
         title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(name, Modifier.weight(1f), maxLines = 1); IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } } },
         text = {
-            if (token == null) {
-                Text("Your session has expired. Please sign in again.")
-            } else when {
+            if (token == null) Text("Your session has expired. Please sign in again.")
+            else when {
                 mimeType.startsWith("video/") -> VideoPreview(api, token, fileId)
-                mimeType.startsWith("image/") -> ImagePreviewMessage()
-                else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Description, null, modifier = Modifier.size(56.dp), tint = Color(0xFFB7F7FF))
-                    Spacer(Modifier.height(12.dp))
-                    Text("Preview is not available for this file type.")
-                }
+                mimeType.startsWith("image/") -> SafeImagePreview(api, token, fileId)
+                else -> Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.Description, null, Modifier.size(56.dp), tint = Color(0xFFB7F7FF)); Spacer(Modifier.height(12.dp)); Text("Preview is not available for this file type.") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
@@ -210,11 +189,38 @@ private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: Strin
 }
 
 @Composable
-private fun ImagePreviewMessage() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Description, null, modifier = Modifier.size(56.dp), tint = Color(0xFFB7F7FF))
-        Spacer(Modifier.height(12.dp))
-        Text("Image preview will be loaded securely without exposing your session.")
+private fun SafeImagePreview(api: DarkiCloudApi, token: String, fileId: String) {
+    val context = LocalContext.current
+    var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var loading by remember(fileId, token) { mutableStateOf(true) }
+    var failed by remember(fileId, token) { mutableStateOf(false) }
+    LaunchedEffect(fileId, token) {
+        loading = true; failed = false; bitmap = null
+        val result = withContext(Dispatchers.IO) {
+            val temp = File.createTempFile("darki-image-", ".preview", context.cacheDir)
+            try {
+                val request = Request.Builder().url(api.fileContentUrl(fileId)).header("Authorization", "Bearer $token").build()
+                OkHttpClient().newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("Image request failed: ${response.code}")
+                    response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: error("Empty image response")
+                }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(temp.absolutePath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) error("Invalid image")
+                val maxDimension = 2048
+                var sample = 1
+                while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) sample *= 2
+                val options = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }
+                BitmapFactory.decodeFile(temp.absolutePath, options)
+            } finally { temp.delete() }
+        }
+        if (result != null) bitmap = result else failed = true
+        loading = false
+    }
+    when {
+        loading -> Box(Modifier.fillMaxWidth().height(360.dp), Alignment.Center) { CircularProgressIndicator() }
+        bitmap != null -> Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit)
+        failed -> Text("Unable to preview this image. Try downloading it instead.")
     }
 }
 
@@ -224,20 +230,12 @@ private fun VideoPreview(api: DarkiCloudApi, token: String, fileId: String) {
     val player = remember(api, token, fileId) {
         val httpFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
         val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-            .build()
-            .apply {
-                setMediaItem(MediaItem.fromUri(api.fileContentUrl(fileId)))
-                prepare()
-                playWhenReady = true
-            }
+        ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory)).build().apply {
+            setMediaItem(MediaItem.fromUri(api.fileContentUrl(fileId))); prepare(); playWhenReady = true
+        }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
-    AndroidView(
-        factory = { PlayerView(it).apply { player = player; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } },
-        modifier = Modifier.fillMaxWidth().height(300.dp),
-    )
+    DisposableEffect(player) { onDispose { player.stop(); player.release() } }
+    AndroidView(factory = { PlayerView(it).apply { player = player; useController = true; layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } }, modifier = Modifier.fillMaxWidth().height(300.dp))
 }
 
 @Composable
@@ -245,67 +243,33 @@ private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, canGoBack: 
     Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-            Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
-                Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
-            }
-            if (authenticated) {
-                IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh") }
-                IconButton(onClick = { }) { Icon(Icons.Default.Search, "Search") }
-                IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") }
-            } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
+            Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), Modifier.size(30.dp)); Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) { Text("DARKI Cloud", fontWeight = FontWeight.SemiBold); Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585)) }
+            if (authenticated) { IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh") }; IconButton(onClick = { }) { Icon(Icons.Default.Search, "Search") }; IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") } }
+            else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
         }
-        Spacer(Modifier.height(18.dp))
-        Box(Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent))))
+        Spacer(Modifier.height(18.dp)); Box(Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent))))
     }
 }
 
 @Composable
 private fun LoginContent(onLogin: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(120.dp))
-        Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp))
-        Spacer(Modifier.height(22.dp))
-        Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp))
-        Spacer(Modifier.height(28.dp))
-        Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Login, null); Spacer(Modifier.width(8.dp)); Text("Continue with Telegram") }
-    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) { Spacer(Modifier.height(120.dp)); Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), Modifier.size(72.dp)); Spacer(Modifier.height(22.dp)); Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), Modifier.padding(top = 8.dp)); Spacer(Modifier.height(28.dp)); Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Login, null); Spacer(Modifier.width(8.dp)); Text("Continue with Telegram") } }
 }
 
 @Composable
 private fun DriveContent(folders: List<FolderEntity>, files: List<FileEntity>, error: String?, downloading: Boolean, onFolderClick: (FolderEntity) -> Unit, onFileClick: (FileEntity) -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Your private cloud storage", color = Color(0xFF858585), modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
-        if (error != null) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB4AB), modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        if (folders.isEmpty() && files.isEmpty() && error == null) {
-            Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), modifier = Modifier.size(52.dp)); Spacer(Modifier.height(14.dp)); Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium); Text("Create a folder or upload a file to get started", color = Color(0xFF666666), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-            }
-            return
-        }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
-            items(folders, key = { it.id }) { folder -> DriveItemRow(folder.name, "Folder", true) { onFolderClick(folder) } }
-            items(files, key = { it.id }) { file -> DriveItemRow(file.name, formatSize(file.sizeBytes), false) { onFileClick(file) } }
-        }
+        Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Your private cloud storage", color = Color(0xFF858585), Modifier.padding(top = 4.dp, bottom = 18.dp))
+        if (error != null) { Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB4AB), Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall) }; Spacer(Modifier.height(12.dp)) }
+        if (folders.isEmpty() && files.isEmpty() && error == null) { Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), Modifier.size(52.dp)); Spacer(Modifier.height(14.dp)); Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium); Text("Create a folder or upload a file to get started", color = Color(0xFF666666), style = MaterialTheme.typography.bodySmall, Modifier.padding(top = 6.dp)) }; return }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) { items(folders, key = { it.id }) { folder -> DriveItemRow(folder.name, "Folder", true) { onFolderClick(folder) } }; items(files, key = { it.id }) { file -> DriveItemRow(file.name, formatSize(file.sizeBytes), false) { onFileClick(file) } } }
     }
 }
 
 @Composable
 private fun DriveItemRow(name: String, subtitle: String, isFolder: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onClick) { Icon(if (isFolder) Icons.Default.Folder else Icons.Default.Description, null, tint = if (isFolder) Color(0xFFB7F7FF) else Color(0xFFB0B0B0), modifier = Modifier.size(28.dp)) }
-        Spacer(Modifier.width(4.dp))
-        Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), modifier = Modifier.padding(top = 3.dp)) }
-    }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onClick) { Icon(if (isFolder) Icons.Default.Folder else Icons.Default.Description, null, tint = if (isFolder) Color(0xFFB7F7FF) else Color(0xFFB0B0B0), Modifier.size(28.dp)) }; Spacer(Modifier.width(4.dp)); Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), Modifier.padding(top = 3.dp)) } }
 }
 
 @Composable
