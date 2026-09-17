@@ -59,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -121,9 +122,10 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
             val error by viewModel.error.collectAsState(initial = null)
             val authenticated by viewModel.isAuthenticated.collectAsState(initial = false)
             val stack by viewModel.folderStack.collectAsState(initial = emptyList())
+            val context = LocalContext.current
             var showCreateFolder by remember { mutableStateOf(false) }
             val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) viewModel.uploadFile(uri, androidx.compose.ui.platform.LocalContext.current.contentResolver)
+                if (uri != null) viewModel.uploadFile(uri, context.contentResolver)
             }
 
             if (authenticated && stack.isNotEmpty()) BackHandler { viewModel.navigateBack() }
