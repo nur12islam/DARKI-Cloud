@@ -98,7 +98,7 @@ export function createApiRouter(): Router {
     try { res.json({ folder: await filesystemService.getRootFolder(req.userId!) }); } catch (error) { next(error); }
   });
   router.get("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
-    try { res.json(await filesystemService.listFolder(req.userId!, req.params.folderId)); } catch (error) { next(error); }
+    try { res.json(await filesystemService.listFolder(req.userId!, req.params.folderId as string)); } catch (error) { next(error); }
   });
   router.post("/folders", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
@@ -109,10 +109,11 @@ export function createApiRouter(): Router {
   });
   router.patch("/folders/:folderId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
+      const folderId = req.params.folderId as string;
       const { name, parentId, deviceId } = req.body as { name?: string; parentId?: string; deviceId?: string };
       if (typeof name === "string" && parentId) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "Choose either name or parentId" } }); return; }
-      if (typeof name === "string") { res.json({ folder: await filesystemService.renameFolder(req.userId!, req.params.folderId, name, deviceId) }); return; }
-      if (typeof parentId === "string") { res.json({ folder: await filesystemService.moveFolder(req.userId!, req.params.folderId, parentId, deviceId) }); return; }
+      if (typeof name === "string") { res.json({ folder: await filesystemService.renameFolder(req.userId!, folderId, name, deviceId) }); return; }
+      if (typeof parentId === "string") { res.json({ folder: await filesystemService.moveFolder(req.userId!, folderId, parentId, deviceId) }); return; }
       res.status(400).json({ error: { code: "INVALID_INPUT", message: "name or parentId is required" } });
     } catch (error) { next(error); }
   });
@@ -125,21 +126,23 @@ export function createApiRouter(): Router {
       const sizeBytes = lengthHeader ? Number(lengthHeader) : NaN;
       const operationId = req.header("x-operation-id")?.trim() || undefined;
       if (!folderId || !name || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "folderId, name, and a valid Content-Length are required" } }); return; }
-      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id"), operationId }) });
+      res.status(201).json({ file: await fileService.upload({ userId: req.userId!, folderId, name, mimeType, sizeBytes, body: req, deviceId: req.header("x-device-id") ?? null, operationId }) });
     } catch (error) { next(error); }
   });
   router.patch("/files/:fileId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
+      const fileId = req.params.fileId as string;
       const { name, folderId, deviceId } = req.body as { name?: string; folderId?: string; deviceId?: string };
       if (typeof name === "string" && folderId) { res.status(400).json({ error: { code: "INVALID_INPUT", message: "Choose either name or folderId" } }); return; }
-      if (typeof name === "string") { res.json({ file: await filesystemService.renameFile(req.userId!, req.params.fileId, name, deviceId) }); return; }
-      if (typeof folderId === "string") { res.json({ file: await filesystemService.moveFile(req.userId!, req.params.fileId, folderId, deviceId) }); return; }
+      if (typeof name === "string") { res.json({ file: await filesystemService.renameFile(req.userId!, fileId, name, deviceId) }); return; }
+      if (typeof folderId === "string") { res.json({ file: await filesystemService.moveFile(req.userId!, fileId, folderId, deviceId) }); return; }
       res.status(400).json({ error: { code: "INVALID_INPUT", message: "name or folderId is required" } });
     } catch (error) { next(error); }
   });
   router.get("/files/:fileId/content", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try {
-      const result = await fileService.getDownload(req.userId!, req.params.fileId);
+      const fileId = req.params.fileId as string;
+      const result = await fileService.getDownload(req.userId!, fileId);
       res.setHeader("Content-Type", result.file.mimeType ?? "application/octet-stream");
       if (result.file.sizeBytes !== null) res.setHeader("Content-Length", result.file.sizeBytes);
       res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.file.name)}`);
@@ -147,10 +150,10 @@ export function createApiRouter(): Router {
     } catch (error) { next(error); }
   });
   router.delete("/files/:fileId", requireAuth, async (req: AuthenticatedRequest, res, next) => {
-    try { res.json(await fileLifecycleService.delete(req.userId!, req.params.fileId, req.header("x-device-id"))); } catch (error) { next(error); }
+    try { res.json(await fileLifecycleService.delete(req.userId!, req.params.fileId as string, req.header("x-device-id") ?? null)); } catch (error) { next(error); }
   });
   router.post("/files/:fileId/restore", requireAuth, async (req: AuthenticatedRequest, res, next) => {
-    try { res.json({ file: await fileLifecycleService.restore(req.userId!, req.params.fileId, req.header("x-device-id")) }); } catch (error) { next(error); }
+    try { res.json({ file: await fileLifecycleService.restore(req.userId!, req.params.fileId as string, req.header("x-device-id") ?? null) }); } catch (error) { next(error); }
   });
   return router;
 }
