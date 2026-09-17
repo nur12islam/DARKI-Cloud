@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -115,10 +117,14 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
             val folders by viewModel.folders.collectAsState(initial = emptyList())
             val files by viewModel.files.collectAsState(initial = emptyList())
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
+            val uploading by viewModel.isUploading.collectAsState(initial = false)
             val error by viewModel.error.collectAsState(initial = null)
             val authenticated by viewModel.isAuthenticated.collectAsState(initial = false)
             val stack by viewModel.folderStack.collectAsState(initial = emptyList())
             var showCreateFolder by remember { mutableStateOf(false) }
+            val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) viewModel.uploadFile(uri, androidx.compose.ui.platform.LocalContext.current.contentResolver)
+            }
 
             if (authenticated && stack.isNotEmpty()) BackHandler { viewModel.navigateBack() }
             if (showCreateFolder) {
@@ -136,11 +142,19 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
                 }
                 if (authenticated) {
                     FloatingActionButton(
-                        onClick = { showCreateFolder = true },
+                        onClick = { filePicker.launch(arrayOf("*/*")) },
                         modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
                         containerColor = Color(0xFF171717),
                         contentColor = Color(0xFFB7F7FF),
-                    ) { Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder") }
+                    ) { if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, contentDescription = "Upload file") }
+                    if (!uploading) {
+                        FloatingActionButton(
+                            onClick = { showCreateFolder = true },
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp),
+                            containerColor = Color(0xFF171717),
+                            contentColor = Color(0xFFB7F7FF),
+                        ) { Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder") }
+                    }
                 }
             }
         }
@@ -148,15 +162,7 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
 }
 
 @Composable
-private fun DriveTopBar(
-    refreshing: Boolean,
-    authenticated: Boolean,
-    canGoBack: Boolean,
-    onBack: () -> Unit,
-    onRefresh: () -> Unit,
-    onLogout: () -> Unit,
-    onLogin: () -> Unit,
-) {
+private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, canGoBack: Boolean, onBack: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit, onLogin: () -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
@@ -226,13 +232,7 @@ private fun DriveItemRow(name: String, subtitle: String, isFolder: Boolean, onCl
 @Composable
 private fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New folder") },
-        text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Folder name") }) },
-        confirmButton = { TextButton(onClick = { if (name.trim().isNotEmpty()) onCreate(name.trim()) }) { Text("Create") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("New folder") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Folder name") }) }, confirmButton = { TextButton(onClick = { if (name.trim().isNotEmpty()) onCreate(name.trim()) }) { Text("Create") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
 private fun formatSize(bytes: Long?): String {
