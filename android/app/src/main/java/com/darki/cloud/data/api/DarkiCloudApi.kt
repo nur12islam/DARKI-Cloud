@@ -35,14 +35,14 @@ class DarkiCloudApi(
     suspend fun moveFile(token: String, fileId: String, folderId: String, deviceId: String): JSONObject = patchJson("/api/v1/files/$fileId", token, JSONObject().apply { put("folderId", folderId); put("deviceId", deviceId) })
     suspend fun deleteFile(token: String, fileId: String, deviceId: String): JSONObject = delete("/api/v1/files/$fileId", token, mapOf("deviceId" to deviceId))
     suspend fun restoreFile(token: String, fileId: String, deviceId: String): JSONObject = postJson("/api/v1/files/$fileId/restore", token, JSONObject().put("deviceId", deviceId))
-    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, input: InputStream): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, operationId: String, input: InputStream): JSONObject = withContext(Dispatchers.IO) {
         val body = object : RequestBody() {
             override fun contentType() = (mimeType ?: "application/octet-stream").toMediaType()
             override fun contentLength() = sizeBytes
             override fun writeTo(sink: okio.BufferedSink) { input.use { source -> source.copyTo(sink.outputStream()) } }
         }
         val url = baseUrl.newBuilder().addPathSegments("api/v1/files").apply { addQueryParameter("folderId", folderId); addQueryParameter("name", name) }.build()
-        execute(Request.Builder().url(url).post(body).header("X-Device-Id", deviceId).bearer(token).build())
+        execute(Request.Builder().url(url).post(body).header("X-Device-Id", deviceId).header("X-Operation-Id", operationId).bearer(token).build())
     }
     suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
