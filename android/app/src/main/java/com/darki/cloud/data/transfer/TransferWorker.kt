@@ -35,7 +35,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                     val name = transfer.name ?: error("Missing upload name")
                     val size = transfer.sizeBytes ?: error("Missing upload size")
                     val input = applicationContext.contentResolver.openInputStream(uri) ?: error("Unable to open upload")
-                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, store.deviceId ?: error("Missing device"), it) }
+                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, store.deviceId ?: error("Missing device"), transfer.id, it) }
                 }
                 "download" -> {
                     val fileId = transfer.fileId ?: error("Missing download file")
