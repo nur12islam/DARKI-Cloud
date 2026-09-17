@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,44 +120,38 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
             val files by viewModel.files.collectAsState(initial = emptyList())
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
             val uploading by viewModel.isUploading.collectAsState(initial = false)
+            val downloading by viewModel.isDownloading.collectAsState(initial = false)
             val error by viewModel.error.collectAsState(initial = null)
             val authenticated by viewModel.isAuthenticated.collectAsState(initial = false)
             val stack by viewModel.folderStack.collectAsState(initial = emptyList())
             val context = LocalContext.current
             var showCreateFolder by remember { mutableStateOf(false) }
+            var downloadTarget by remember { mutableStateOf<FileEntity?>(null) }
             val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 if (uri != null) viewModel.uploadFile(uri, context.contentResolver)
+            }
+            val saveFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+                val file = downloadTarget
+                downloadTarget = null
+                if (uri != null && file != null) viewModel.downloadFile(file, context.contentResolver, context.contentResolver.openOutputStream(uri) ?: return@rememberLauncherForActivityResult)
             }
 
             if (authenticated && stack.isNotEmpty()) BackHandler { viewModel.navigateBack() }
             if (showCreateFolder) {
-                CreateFolderDialog(
-                    onDismiss = { showCreateFolder = false },
-                    onCreate = { name -> showCreateFolder = false; viewModel.createFolder(name) },
-                )
+                CreateFolderDialog(onDismiss = { showCreateFolder = false }, onCreate = { name -> showCreateFolder = false; viewModel.createFolder(name) })
             }
 
             Box(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize()) {
                     DriveTopBar(refreshing, authenticated, stack.isNotEmpty(), viewModel::navigateBack, viewModel::refreshRoot, viewModel::logout, onLogin)
-                    if (authenticated) DriveContent(folders, files, error, viewModel::openFolder)
+                    if (authenticated) DriveContent(folders, files, error, viewModel::openFolder, { file -> downloadTarget = file; saveFilePicker.launch(file.name) })
                     else LoginContent(onLogin)
                 }
                 if (authenticated) {
-                    FloatingActionButton(
-                        onClick = { filePicker.launch(arrayOf("*/*")) },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-                        containerColor = Color(0xFF171717),
-                        contentColor = Color(0xFFB7F7FF),
-                    ) { if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, contentDescription = "Upload file") }
-                    if (!uploading) {
-                        FloatingActionButton(
-                            onClick = { showCreateFolder = true },
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp),
-                            containerColor = Color(0xFF171717),
-                            contentColor = Color(0xFFB7F7FF),
-                        ) { Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder") }
+                    FloatingActionButton(onClick = { filePicker.launch(arrayOf("*/*")) }, modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) {
+                        if (uploading || downloading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, contentDescription = "Upload file")
                     }
+                    if (!uploading && !downloading) FloatingActionButton(onClick = { showCreateFolder = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder") }
                 }
             }
         }
@@ -168,56 +163,36 @@ private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, canGoBack: 
     Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-            Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
-                Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
-            }
+            Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp)); Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) { Text("DARKI Cloud", fontWeight = FontWeight.SemiBold); Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585)) }
             if (authenticated) {
                 IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh") }
                 IconButton(onClick = { }) { Icon(Icons.Default.Search, "Search") }
                 IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") }
             } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
         }
-        Spacer(Modifier.height(18.dp))
-        Box(Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent))))
+        Spacer(Modifier.height(18.dp)); Box(Modifier.fillMaxWidth().height(2.dp).background(Brush.horizontalGradient(listOf(Color.Transparent, Color(0xFF3A6D76), Color.Transparent))))
     }
 }
 
 @Composable
 private fun LoginContent(onLogin: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(120.dp))
-        Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp))
-        Spacer(Modifier.height(22.dp))
-        Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp))
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(120.dp)); Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp)); Spacer(Modifier.height(22.dp))
+        Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp)); Spacer(Modifier.height(28.dp))
         Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Login, null); Spacer(Modifier.width(8.dp)); Text("Continue with Telegram") }
     }
 }
 
 @Composable
-private fun DriveContent(folders: List<FolderEntity>, files: List<FileEntity>, error: String?, onFolderClick: (FolderEntity) -> Unit) {
+private fun DriveContent(folders: List<FolderEntity>, files: List<FileEntity>, error: String?, onFolderClick: (FolderEntity) -> Unit, onFileDownload: (FileEntity) -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Your private cloud storage", color = Color(0xFF858585), modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
-        if (error != null) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB4AB), modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        if (folders.isEmpty() && files.isEmpty() && error == null) {
-            Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), modifier = Modifier.size(52.dp)); Spacer(Modifier.height(14.dp)); Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium); Text("Create a folder or upload a file to get started", color = Color(0xFF666666), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-            }
-            return
-        }
+        Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Your private cloud storage", color = Color(0xFF858585), modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
+        if (error != null) { Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF171111)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB4AB), modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall) }; Spacer(Modifier.height(12.dp)) }
+        if (folders.isEmpty() && files.isEmpty() && error == null) { Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), modifier = Modifier.size(52.dp)); Spacer(Modifier.height(14.dp)); Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium); Text("Create a folder or upload a file to get started", color = Color(0xFF666666), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)) }; return }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
             items(folders, key = { it.id }) { folder -> DriveItemRow(folder.name, "Folder", true) { onFolderClick(folder) } }
-            items(files, key = { it.id }) { file -> DriveItemRow(file.name, formatSize(file.sizeBytes), false) {} }
+            items(files, key = { it.id }) { file -> DriveItemRow(file.name, formatSize(file.sizeBytes), false) { onFileDownload(file) } }
         }
     }
 }
@@ -226,8 +201,8 @@ private fun DriveContent(folders: List<FolderEntity>, files: List<FileEntity>, e
 private fun DriveItemRow(name: String, subtitle: String, isFolder: Boolean, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onClick) { Icon(if (isFolder) Icons.Default.Folder else Icons.Default.Description, null, tint = if (isFolder) Color(0xFFB7F7FF) else Color(0xFFB0B0B0), modifier = Modifier.size(28.dp)) }
-        Spacer(Modifier.width(4.dp))
-        Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), modifier = Modifier.padding(top = 3.dp)) }
+        Spacer(Modifier.width(4.dp)); Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), modifier = Modifier.padding(top = 3.dp)) }
+        if (!isFolder) IconButton(onClick = onClick) { Icon(Icons.Default.Download, "Download", tint = Color(0xFF888888)) }
     }
 }
 
@@ -238,9 +213,5 @@ private fun CreateFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit
 }
 
 private fun formatSize(bytes: Long?): String {
-    if (bytes == null) return "File"
-    if (bytes < 1024) return "$bytes B"
-    if (bytes < 1024 * 1024) return "%.1f KB".format(bytes / 1024.0)
-    if (bytes < 1024 * 1024 * 1024) return "%.1f MB".format(bytes / (1024.0 * 1024.0))
-    return "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+    if (bytes == null) return "File"; if (bytes < 1024) return "$bytes B"; if (bytes < 1024 * 1024) return "%.1f KB".format(bytes / 1024.0); if (bytes < 1024 * 1024 * 1024) return "%.1f MB".format(bytes / (1024.0 * 1024.0)); return "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
 }
