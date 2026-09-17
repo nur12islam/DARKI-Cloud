@@ -11,7 +11,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 
@@ -32,12 +31,11 @@ fun MoveDialog(title: String, folders: List<FolderEntity>, currentFolderId: Stri
     val choices = folders.filter { it.id != currentFolderId }
     var expanded by remember { mutableStateOf(false) }
     var selected by remember(choices) { mutableStateOf(choices.firstOrNull()) }
-    Column {
-        OutlinedTextField(value = selected?.name ?: "No destination available", onValueChange = {}, readOnly = true, label = { Text("Destination") }, modifier = Modifier.fillMaxWidth().then(Modifier))
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column {
+        OutlinedTextField(value = selected?.name ?: "No destination available", onValueChange = {}, readOnly = true, label = { Text("Destination") }, modifier = Modifier.fillMaxWidth())
+        TextButton(onClick = { expanded = true }, enabled = choices.isNotEmpty()) { Text(if (choices.isEmpty()) "No folders available" else "Choose folder") }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) { choices.forEach { folder -> DropdownMenuItem(text = { Text(folder.name) }, onClick = { selected = folder; expanded = false }) } }
-        TextButton(onClick = { expanded = true }) { Text("Choose folder") }
-    }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column { OutlinedTextField(value = selected?.name ?: "No destination available", onValueChange = {}, readOnly = true, label = { Text("Destination") }, modifier = Modifier.fillMaxWidth()); TextButton(onClick = { expanded = true }) { Text("Choose folder") }; DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) { choices.forEach { folder -> DropdownMenuItem(text = { Text(folder.name) }, onClick = { selected = folder; expanded = false }) } } } }, confirmButton = { Button(onClick = { selected?.let { onMove(it.id) } }, enabled = selected != null) { Text("Move") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    } }, confirmButton = { Button(onClick = { selected?.let { onMove(it.id) } }, enabled = selected != null) { Text("Move") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable
