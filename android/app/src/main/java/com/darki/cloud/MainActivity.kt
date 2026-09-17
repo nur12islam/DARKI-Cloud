@@ -59,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -187,14 +188,7 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, api: DarkiCloudApi, au
 }
 
 @Composable
-private fun MediaPreviewDialog(
-    api: DarkiCloudApi,
-    token: String?,
-    fileId: String,
-    mimeType: String,
-    name: String,
-    onDismiss: () -> Unit,
-) {
+private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(name, Modifier.weight(1f), maxLines = 1); IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } } },
