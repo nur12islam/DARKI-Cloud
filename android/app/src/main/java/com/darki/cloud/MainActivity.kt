@@ -1,16 +1,14 @@
 package com.darki.cloud
 
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
+import androidx.activity.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,15 +61,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.darki.cloud.data.api.DarkiCloudApi
 import com.darki.cloud.data.local.CloudDatabase
@@ -107,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private fun render() {
         setContent {
             val driveViewModel: DarkiCloudViewModel = viewModel(factory = DarkiCloudViewModel.factory(repository, sessionStore))
-            DarkiCloudApp(driveViewModel, pendingAuthCode, ::openTelegramLogin)
+            DarkiCloudApp(driveViewModel, api, pendingAuthCode, ::openTelegramLogin)
         }
     }
 
@@ -121,7 +120,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onLogin: () -> Unit) {
+private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, api: DarkiCloudApi, authCode: String?, onLogin: () -> Unit) {
     LaunchedEffect(authCode) { if (authCode != null) viewModel.completeTelegramLogin(authCode) }
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF050505)) {
@@ -130,7 +129,7 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
             val refreshing by viewModel.isRefreshing.collectAsState(initial = false)
             val uploading by viewModel.isUploading.collectAsState(initial = false)
             val downloading by viewModel.isDownloading.collectAsState(initial = false)
-            val previewUri by viewModel.previewUri.collectAsState(initial = null)
+            val previewFileId by viewModel.previewFileId.collectAsState(initial = null)
             val previewMimeType by viewModel.previewMimeType.collectAsState(initial = null)
             val previewName by viewModel.previewName.collectAsState(initial = null)
             val error by viewModel.error.collectAsState(initial = null)
@@ -143,9 +142,11 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
             }
 
             if (authenticated && stack.isNotEmpty()) BackHandler { viewModel.navigateBack() }
-            if (previewUri != null && previewMimeType != null) {
+            if (previewFileId != null && previewMimeType != null) {
                 MediaPreviewDialog(
-                    uri = previewUri!!,
+                    api = api,
+                    token = viewModel.previewToken(),
+                    fileId = previewFileId!!,
                     mimeType = previewMimeType!!,
                     name = previewName ?: "Preview",
                     onDismiss = viewModel::closePreview,
@@ -186,14 +187,23 @@ private fun DarkiCloudApp(viewModel: DarkiCloudViewModel, authCode: String?, onL
 }
 
 @Composable
-private fun MediaPreviewDialog(uri: Uri, mimeType: String, name: String, onDismiss: () -> Unit) {
+private fun MediaPreviewDialog(
+    api: DarkiCloudApi,
+    token: String?,
+    fileId: String,
+    mimeType: String,
+    name: String,
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Row(verticalAlignment = Alignment.CenterVertically) { Text(name, Modifier.weight(1f), maxLines = 1); IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } } },
         text = {
-            when {
-                mimeType.startsWith("image/") -> ImagePreview(uri)
-                mimeType.startsWith("video/") -> VideoPreview(uri)
+            if (token == null) {
+                Text("Your session has expired. Please sign in again.")
+            } else when {
+                mimeType.startsWith("video/") -> VideoPreview(api, token, fileId)
+                mimeType.startsWith("image/") -> ImagePreviewMessage()
                 else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Description, null, modifier = Modifier.size(56.dp), tint = Color(0xFFB7F7FF))
                     Spacer(Modifier.height(12.dp))
@@ -206,29 +216,28 @@ private fun MediaPreviewDialog(uri: Uri, mimeType: String, name: String, onDismi
 }
 
 @Composable
-private fun ImagePreview(uri: Uri) {
-    val bitmap = remember(uri) { BitmapFactory.decodeFile(uri.path) }
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth().height(420.dp),
-            contentScale = ContentScale.Fit,
-        )
-    } else {
-        Text("Unable to render this image")
+private fun ImagePreviewMessage() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Default.Description, null, modifier = Modifier.size(56.dp), tint = Color(0xFFB7F7FF))
+        Spacer(Modifier.height(12.dp))
+        Text("Image preview will be loaded securely without exposing your session.")
     }
 }
 
 @Composable
-private fun VideoPreview(uri: Uri) {
+private fun VideoPreview(api: DarkiCloudApi, token: String, fileId: String) {
     val context = LocalContext.current
-    val player = remember(uri) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(uri))
-            prepare()
-            playWhenReady = true
-        }
+    val player = remember(api, token, fileId) {
+        val httpFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build()
+            .apply {
+                setMediaItem(MediaItem.fromUri(api.fileContentUrl(fileId)))
+                prepare()
+                playWhenReady = true
+            }
     }
     DisposableEffect(player) { onDispose { player.release() } }
     AndroidView(
