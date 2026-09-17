@@ -20,18 +20,17 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,54 +55,56 @@ class SearchActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@androidx.compose.runtime.Composable
+@Composable
 private fun SearchScreen(store: SessionStore, repository: CloudRepository, onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    val results by remember { mutableStateOf(androidx.compose.runtime.mutableStateOf<SearchResults?>(null)) }.value.collectAsState(initial = null)
-    val searching = remember { androidx.compose.runtime.mutableStateOf(false) }
-    val error = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var results by remember { mutableStateOf<SearchResults?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(query) {
         val token = store.token ?: return@LaunchedEffect
         val q = query.trim()
-        if (q.isEmpty()) { results.value = null; return@LaunchedEffect }
-        searching.value = true
-        error.value = null
+        if (q.isEmpty()) { results = null; error = null; return@LaunchedEffect }
+        searching = true
+        error = null
         withContext(Dispatchers.IO) {
             runCatching { repository.search(token, q) }
-                .onSuccess { results.value = it }
-                .onFailure { error.value = it.message ?: "Unable to search cloud" }
+                .onSuccess { results = it }
+                .onFailure { error = it.message ?: "Unable to search cloud" }
         }
-        searching.value = false
+        searching = false
     }
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
         Column(Modifier.fillMaxSize().padding(20.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.weight(1f), singleLine = true, placeholder = { Text("Search files and folders") }, leadingIcon = { Icon(Icons.Default.Search, null) })
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("Search files and folders") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                )
             }
             Spacer(Modifier.height(20.dp))
             when {
-                searching.value -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                error.value != null -> Text(error.value!!, color = Color(0xFFFFB4AB))
-                results.value == null -> Text("Search your private cloud", color = Color(0xFF858585))
-                results.value!!.folders.isEmpty() && results.value!!.files.isEmpty() -> Text("No matching files or folders", color = Color(0xFF858585))
+                searching -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+                error != null -> Text(error!!, color = Color(0xFFFFB4AB))
+                results == null -> Text("Search your private cloud", color = Color(0xFF858585))
+                results!!.folders.isEmpty() && results!!.files.isEmpty() -> Text("No matching files or folders", color = Color(0xFF858585))
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(results.value!!.folders, key = { it.id }) { folder ->
-                        SearchResultRow(folder.name, "Folder", true)
-                    }
-                    items(results.value!!.files, key = { it.id }) { file ->
-                        SearchResultRow(file.name, file.mimeType ?: "File", false)
-                    }
+                    items(results!!.folders, key = { it.id }) { folder -> SearchResultRow(folder.name, "Folder", true) }
+                    items(results!!.files, key = { it.id }) { file -> SearchResultRow(file.name, file.mimeType ?: "File", false) }
                 }
             }
         }
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun SearchResultRow(name: String, subtitle: String, folder: Boolean) {
     Row(Modifier.fillMaxWidth().clickable { }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(if (folder) Icons.Default.Folder else Icons.Default.Description, null, tint = Color(0xFFB7F7FF))
