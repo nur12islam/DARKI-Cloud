@@ -23,6 +23,20 @@ export class StorageObjectRepository {
     return result.rows[0]!;
   }
 
+  async listReady(limit = 100): Promise<StorageObjectRecord[]> {
+    const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
+    const result = await this.db.query<StorageObjectRecord>(
+      `SELECT id, user_id AS "userId", provider, provider_object_key AS "providerObjectKey",
+              size_bytes AS "sizeBytes", mime_type AS "mimeType", sha256, state,
+              created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"
+         FROM storage_objects
+        WHERE state = 'ready'
+        ORDER BY modified_at ASC
+        LIMIT ${safeLimit}`,
+    );
+    return result.rows;
+  }
+
   async setState(id: string, userId: string, state: string): Promise<void> {
     await this.db.query(
       `UPDATE storage_objects
