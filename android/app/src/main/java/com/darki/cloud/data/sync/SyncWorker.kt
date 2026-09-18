@@ -10,11 +10,14 @@ import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
 class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
         val store = SessionStore(applicationContext)
         val token = store.token ?: return@withContext Result.success()
 
@@ -43,5 +46,9 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         } finally {
             db.close()
         }
+    }
+
+    companion object {
+        private val syncMutex = Mutex()
     }
 }
