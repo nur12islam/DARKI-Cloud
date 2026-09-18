@@ -361,11 +361,166 @@ private fun DriveGridItem(
     }
 }
 
-@Composable private fun AuthenticatedThumbnail(fileId: String, token: String) { val context = LocalContext.current; var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }; LaunchedEffect(fileId, token) { withContext(Dispatchers.IO) { runCatching { val temp = File.createTempFile("darki-thumb-", ".img", context.cacheDir); try { OkHttpClient().newCall(Request.Builder().url(BuildConfig.DARKI_CLOUD_BASE_URL.trimEnd('/') + "/api/v1/files/$fileId/content").header("Authorization", "Bearer $token").build()).execute().use { response -> if (!response.isSuccessful) return@runCatching; response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: return@runCatching }; val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(temp.absolutePath, bounds); if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching; var sample = 1; while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2; bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }) } finally { temp.delete() } } } }; if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Image, null, tint = Color(0xFFB7F7FF), Modifier.size(44.dp)) } }
-@Composable private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text(name, maxLines = 1) }, text = { if (token == null) Text("Your session has expired.") else when { mimeType.startsWith("video/") -> VideoPreview(api, token, fileId); mimeType.startsWith("image/") -> SafeImagePreview(api, token, fileId); else -> Text("Preview is not available for this file type.") } }, confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }) }
-@Composable private fun SafeImagePreview(api: DarkiCloudApi, token: String, fileId: String) { val context = LocalContext.current; var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }; var loading by remember(fileId, token) { mutableStateOf(true) }; LaunchedEffect(fileId, token) { loading = true; withContext(Dispatchers.IO) { runCatching { val temp = File.createTempFile("darki-image-", ".preview", context.cacheDir); try { OkHttpClient().newCall(Request.Builder().url(api.fileContentUrl(fileId)).header("Authorization", "Bearer $token").build()).execute().use { response -> if (!response.isSuccessful) error("Image request failed"); response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: error("Empty image response") }; val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(temp.absolutePath, bounds); var sample = 1; while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2; bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }) } finally { temp.delete() } } }; loading = false }; if (loading) Box(Modifier.fillMaxWidth().height(360.dp), Alignment.Center) { CircularProgressIndicator() } else if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit) else Text("Unable to preview this image. Try downloading it instead.") }
-@Composable private fun VideoPreview(api: DarkiCloudApi, token: String, fileId: String) { val context = LocalContext.current; val exoPlayer = remember(api, token, fileId) { val http = DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token")); ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))).build().apply { setMediaItem(MediaItem.fromUri(api.fileContentUrl(fileId))); prepare(); playWhenReady = true } }; DisposableEffect(exoPlayer) { onDispose { exoPlayer.stop(); exoPlayer.release() } }; AndroidView(factory = { PlayerView(it).apply { this.player = exoPlayer; useController = true } }, Modifier.fillMaxWidth().height(300.dp)) }
-@Composable private fun DriveTopBar(refreshing: Boolean, authenticated: Boolean, canGoBack: Boolean, onBack: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit, onLogin: () -> Unit, onTrash: () -> Unit, showTrash: Boolean, transferCount: Int, onTransfers: () -> Unit, onSearch: () -> Unit) { Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }; Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), Modifier.size(30.dp)); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("DARKI Cloud", fontWeight = FontWeight.SemiBold); Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585)) }; if (authenticated) { IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search") }; if (transferCount > 0) AssistChip(onClick = onTransfers, label = { Text("$transferCount transfer${if (transferCount == 1) "" else "s"}") }, leadingIcon = { Icon(Icons.Default.CloudSync, null) }); IconButton(onClick = onRefresh, enabled = !refreshing) { if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh") }; if (showTrash) IconButton(onClick = onTrash) { Icon(Icons.Default.DeleteSweep, "Trash") }; IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") } } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") } } } }
-@Composable private fun LoginContent(onLogin: () -> Unit) { Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) { Spacer(Modifier.height(120.dp)); Icon(Icons.Default.Cloud, null, tint = Color(0xFFB7F7FF), Modifier.size(72.dp)); Spacer(Modifier.height(22.dp)); Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), Modifier.padding(top = 8.dp)); Spacer(Modifier.height(28.dp)); Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Login, null); Spacer(Modifier.width(8.dp)); Text("Continue with Telegram") } } }
+@Composable
+private fun AuthenticatedThumbnail(fileId: String, token: String) {
+    val context = LocalContext.current
+    var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(fileId, token) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val temp = File.createTempFile("darki-thumb-", ".img", context.cacheDir)
+                try {
+                    OkHttpClient().newCall(
+                        Request.Builder().url(BuildConfig.DARKI_CLOUD_BASE_URL.trimEnd('/') + "/api/v1/files/$fileId/content")
+                            .header("Authorization", "Bearer $token").build()
+                    ).execute().use { response ->
+                        if (!response.isSuccessful) return@runCatching
+                        response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: return@runCatching
+                    }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(temp.absolutePath, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching
+                    var sample = 1
+                    while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
+                    bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply {
+                        inSampleSize = sample
+                        inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    })
+                } finally { temp.delete() }
+            }
+        }
+    }
+    val image = bitmap
+    if (image != null) {
+        Image(bitmap = image.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+    } else {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(44.dp))
+        }
+    }
+}
+
+@Composable
+private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = name, maxLines = 1) },
+        text = {
+            if (token == null) Text("Your session has expired.")
+            else if (mimeType.startsWith("video/")) VideoPreview(api, token, fileId)
+            else if (mimeType.startsWith("image/")) SafeImagePreview(api, token, fileId)
+            else Text("Preview is not available for this file type.")
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
+}
+
+@Composable
+private fun SafeImagePreview(api: DarkiCloudApi, token: String, fileId: String) {
+    val context = LocalContext.current
+    var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var loading by remember(fileId, token) { mutableStateOf(true) }
+    LaunchedEffect(fileId, token) {
+        loading = true
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val temp = File.createTempFile("darki-image-", ".preview", context.cacheDir)
+                try {
+                    OkHttpClient().newCall(Request.Builder().url(api.fileContentUrl(fileId)).header("Authorization", "Bearer $token").build())
+                        .execute().use { response ->
+                            if (!response.isSuccessful) error("Image request failed")
+                            response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                                ?: error("Empty image response")
+                        }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(temp.absolutePath, bounds)
+                    var sample = 1
+                    while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                    bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply {
+                        inSampleSize = sample
+                        inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    })
+                } finally { temp.delete() }
+            }
+        }
+        loading = false
+    }
+    if (loading) {
+        Box(Modifier.fillMaxWidth().height(360.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else {
+        val image = bitmap
+        if (image != null) {
+            Image(bitmap = image.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit)
+        } else Text("Unable to preview this image. Try downloading it instead.")
+    }
+}
+
+@Composable
+private fun VideoPreview(api: DarkiCloudApi, token: String, fileId: String) {
+    val context = LocalContext.current
+    val exoPlayer = remember(api, token, fileId) {
+        val http = DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
+        ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, http))).build().apply {
+            setMediaItem(MediaItem.fromUri(api.fileContentUrl(fileId)))
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(exoPlayer) {
+        onDispose { exoPlayer.stop(); exoPlayer.release() }
+    }
+    AndroidView(
+        factory = { context -> PlayerView(context).apply { player = exoPlayer; useController = true } },
+        modifier = Modifier.fillMaxWidth().height(300.dp)
+    )
+}
+
+@Composable
+private fun DriveTopBar(
+    refreshing: Boolean, authenticated: Boolean, canGoBack: Boolean,
+    onBack: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit, onLogin: () -> Unit,
+    onTrash: () -> Unit, showTrash: Boolean, transferCount: Int, onTransfers: () -> Unit, onSearch: () -> Unit
+) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
+                Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
+            }
+            if (authenticated) {
+                IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search") }
+                if (transferCount > 0) {
+                    AssistChip(onClick = onTransfers, label = { Text(transferCount.toString() + " transfer" + if (transferCount == 1) "" else "s") }, leadingIcon = { Icon(Icons.Default.CloudSync, null) })
+                }
+                IconButton(onClick = onRefresh, enabled = !refreshing) {
+                    if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh")
+                }
+                if (showTrash) IconButton(onClick = onTrash) { Icon(Icons.Default.DeleteSweep, "Trash") }
+                IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") }
+            } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
+        }
+    }
+}
+
+@Composable
+private fun LoginContent(onLogin: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(120.dp))
+        Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp))
+        Spacer(Modifier.height(22.dp))
+        Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(28.dp))
+        Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) {
+            Icon(Icons.Default.Login, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Continue with Telegram")
+        }
+    }
+}
+
 private fun guessMime(name: String?): String? = when (name?.substringAfterLast('.', "")?.lowercase()) { "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg" -> "image/*"; "mp4", "mkv", "webm", "mov", "avi" -> "video/*"; else -> null }
 private fun formatSize(size: Long?): String = when { size == null -> "Unknown size"; size < 1024 -> "$size B"; size < 1024 * 1024 -> "%.1f KB".format(size / 1024.0); size < 1024L * 1024L * 1024L -> "%.1f MB".format(size / (1024.0 * 1024.0)); else -> "%.1f GB".format(size / (1024.0 * 1024.0 * 1024.0)) }
