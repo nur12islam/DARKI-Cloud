@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,18 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
                         if (transfer.attempts > 0) " • ${transfer.attempts} attempt${if (transfer.attempts == 1) "" else "s"}" else "",
                     style = MaterialTheme.typography.labelSmall,
                 )
+                if (transfer.status == "running") {
+                    val total = transfer.sizeBytes ?: 0L
+                    if (total > 0L) {
+                        LinearProgressIndicator(
+                            progress = { (transfer.progressBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        )
+                        Text("${formatBytes(transfer.progressBytes)} / ${formatBytes(total)}", style = MaterialTheme.typography.labelSmall)
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                    }
+                }
                 if (transfer.status == "failed" && !transfer.lastError.isNullOrBlank()) {
                     Text(transfer.lastError!!, style = MaterialTheme.typography.bodySmall)
                 }
@@ -78,4 +91,10 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
             }
         }
     }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024f * 1024f))
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024f)
+    else -> "$bytes B"
 }
