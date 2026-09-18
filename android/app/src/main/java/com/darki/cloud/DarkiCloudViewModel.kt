@@ -15,6 +15,7 @@ import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.local.TransferEntity
 import com.darki.cloud.data.repository.CloudRepository
 import com.darki.cloud.data.transfer.TransferScheduler
+import com.darki.cloud.data.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -41,12 +42,14 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     private val _previewName = MutableStateFlow<String?>(null); val previewName: Flow<String?> = _previewName
     private val _error = MutableStateFlow<String?>(null); val error: Flow<String?> = _error
     init { refreshRoot() }
-    fun completeTelegramLogin(code: String) { viewModelScope.launch { _error.value = null; runCatching { val response = repository.exchangeTelegramLogin(code); sessionStore.token = response.getString("token"); sessionStore.userId = response.getJSONObject("user").getString("id"); val root = repository.loadRoot(sessionStore.token!!); sessionStore.rootFolderId = root.id; _currentFolderId.value = root.id; ensureDeviceAndSync(sessionStore.token!!); _isAuthenticated.value = true }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" } } }
+    fun completeTelegramLogin(code: String) { viewModelScope.launch { _error.value = null; runCatching { val response = repository.exchangeTelegramLogin(code); sessionStore.token = response.getString("token"); sessionStore.userId = response.getJSONObject("user").getString("id"); val root = repository.loadRoot(sessionStore.token!!); sessionStore.rootFolderId = root.id; _currentFolderId.value = root.id; ensureDeviceAndSync(sessionStore.token!!); SyncScheduler.enqueueNow(appContext); _isAuthenticated.value = true }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" } } }
     fun logout() { val token = sessionStore.token; viewModelScope.launch { runCatching { repository.logout(token) }; closePreview(); _searchResults.value = null; sessionStore.clear(); _currentFolderId.value = null; _folderStack.value = emptyList(); _isAuthenticated.value = false } }
     fun refreshRoot() { val token = sessionStore.token ?: return; viewModelScope.launch { _isRefreshing.value = true; _error.value = null; runCatching { val root = repository.loadRoot(token); sessionStore.rootFolderId = root.id; if (_currentFolderId.value == null) _currentFolderId.value = root.id; ensureDeviceAndSync(token) }.onFailure { error -> if (error is DarkiCloudApiException && error.statusCode == 401) { closePreview(); sessionStore.clear(); _isAuthenticated.value = false }; _error.value = error.message ?: "Unable to synchronize cloud data" }; _isRefreshing.value = false } }
     fun search(query: String) { val token = sessionStore.token ?: return; val normalized = query.trim(); if (normalized.isEmpty()) { _searchResults.value = null; return }; viewModelScope.launch { _searching.value = true; _error.value = null; runCatching { repository.search(token, normalized) }.onSuccess { _searchResults.value = it }.onFailure { _error.value = it.message ?: "Unable to search cloud" }; _searching.value = false } }
     fun clearSearch() { _searchResults.value = null }
     fun openFolder(folder: FolderEntity) { _searchResults.value = null; viewModelScope.launch { _folderStack.value = _folderStack.value + folder; _currentFolderId.value = folder.id; sessionStore.token?.let { runCatching { repository.loadFolder(it, folder.id) } } } }
+    fun openFolderById(folderId: String) { val token = sessionStore.token ?: return; viewModelScope.launch { runCatching { repository.loadFolder(token, folderId); repository.findFolder(folderId) }.onSuccess { folder -> if (folder != null && folder.id != sessionStore.rootFolderId) _folderStack.value = _folderStack.value + folder; _currentFolderId.value = folderId }.onFailure { _error.value = it.message ?: "Unable to open folder" } } }
+    fun previewFileById(fileId: String) { viewModelScope.launch { repository.findFile(fileId)?.let { previewFile(it) } } }
     fun navigateBack(): Boolean { val stack = _folderStack.value; if (stack.isEmpty()) return false; val next = stack.dropLast(1); _folderStack.value = next; _currentFolderId.value = next.lastOrNull()?.id ?: sessionStore.rootFolderId; return true }
     fun createFolder(name: String) { val token = sessionStore.token ?: return; val parentId = _currentFolderId.value ?: return; val deviceId = sessionStore.deviceId ?: return; action("Unable to create folder") { repository.createFolder(token, parentId, name, deviceId); repository.loadFolder(token, parentId) } }
     fun renameFolder(folder: FolderEntity, name: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to rename folder") { repository.renameFolder(token, folder.id, name, device); repository.loadFolder(token, folder.parentId ?: sessionStore.rootFolderId!!) } }
@@ -54,6 +57,8 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     fun renameFile(file: FileEntity, name: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to rename file") { repository.renameFile(token, file.id, name, device); repository.loadFolder(token, file.folderId) } }
     fun moveFile(file: FileEntity, folderId: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to move file") { repository.moveFile(token, file.id, folderId, device); refreshCurrentFolder(token) } }
     fun deleteFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to delete file") { repository.deleteFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
+    fun permanentlyDeleteFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to permanently delete file") { repository.permanentlyDeleteFile(token, file.id, device) } }
+    fun emptyTrash() { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to empty trash") { repository.emptyTrash(token, device) } }
     fun restoreFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to restore file") { repository.restoreFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
     fun uploadFile(uri: Uri, resolver: ContentResolver) {
         val folderId = _currentFolderId.value ?: return
@@ -71,6 +76,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
         val transfer = TransferEntity(UUID.randomUUID().toString(), "download", null, file.id, null, file.name, file.mimeType, file.sizeBytes, destination.toString(), "queued", 0, null, now, now)
         viewModelScope.launch { _error.value = null; runCatching { repository.enqueueTransfer(transfer); TransferScheduler.enqueue(appContext, transfer) }.onFailure { _error.value = it.message ?: "Unable to queue download" } }
     }
+    fun cancelTransfer(transfer: TransferEntity) { viewModelScope.launch { runCatching { TransferScheduler.cancel(appContext, transfer); repository.removeTransfer(transfer.id) }.onFailure { _error.value = it.message ?: "Unable to cancel transfer" } } }
     fun retryTransfer(transfer: TransferEntity) { val reset = transfer.copy(status = "queued", attempts = 0, lastError = null, updatedAt = System.currentTimeMillis()); viewModelScope.launch { runCatching { repository.enqueueTransfer(reset); TransferScheduler.retry(appContext, reset) }.onFailure { _error.value = it.message ?: "Unable to retry transfer" } } }
     fun previewFile(file: FileEntity) { if (sessionStore.token == null) return; _error.value = null; _previewFileId.value = file.id; _previewMimeType.value = file.mimeType ?: guessMimeType(file.name); _previewName.value = file.name }
     fun previewToken(): String? = sessionStore.token

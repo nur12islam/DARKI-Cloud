@@ -19,3 +19,6 @@ CREATE INDEX IF NOT EXISTS telegram_login_attempts_expiry_idx
 CREATE INDEX IF NOT EXISTS telegram_login_attempts_exchange_idx
     ON telegram_login_attempts (exchange_code_hash)
     WHERE exchange_code_hash IS NOT NULL AND used_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS telegram_login_attempts_cleanup_idx
+    ON telegram_login_attempts (expires_at, used_at);

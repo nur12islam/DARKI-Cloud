@@ -25,7 +25,8 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         val token = store.token ?: return@withContext Result.failure()
         val api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         val repository = CloudRepository(api, dao)
-        dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, updatedAt = System.currentTimeMillis()))
+        dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
+        val progress: (Long) -> Unit = { bytes -> dao.updateTransferProgress(id, bytes, System.currentTimeMillis()) }
         var temporaryDownload: File? = null
         try {
             when (transfer.type) {
@@ -35,13 +36,13 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                     val name = transfer.name ?: error("Missing upload name")
                     val size = transfer.sizeBytes ?: error("Missing upload size")
                     val input = applicationContext.contentResolver.openInputStream(uri) ?: error("Unable to open upload")
-                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, store.deviceId ?: error("Missing device"), transfer.id, it) }
+                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, store.deviceId ?: error("Missing device"), transfer.id, it, progress) }
                 }
                 "download" -> {
                     val fileId = transfer.fileId ?: error("Missing download file")
                     val destination = transfer.destinationUri?.let(android.net.Uri::parse) ?: error("Missing download destination")
                     temporaryDownload = File.createTempFile("darki-download-", ".part", applicationContext.cacheDir)
-                    FileOutputStream(temporaryDownload).use { repository.downloadFile(token, fileId, it) }
+                    FileOutputStream(temporaryDownload).use { output -> repository.downloadFile(token, fileId, output) { bytes -> progress(bytes) } }
                     applicationContext.contentResolver.openOutputStream(destination)?.use { output ->
                         temporaryDownload!!.inputStream().use { input -> input.copyTo(output) }
                     } ?: error("Unable to open download destination")
@@ -53,7 +54,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         } catch (error: Exception) {
             val attempts = transfer.attempts + 1
             val terminal = attempts >= MAX_ATTEMPTS
-            dao.upsertTransfer(transfer.copy(status = if (terminal) "failed" else "queued", attempts = attempts, lastError = error.message, updatedAt = System.currentTimeMillis()))
+            dao.upsertTransfer(transfer.copy(status = if (terminal) "failed" else "queued", attempts = attempts, lastError = error.message, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
             if (terminal) Result.failure() else Result.retry()
         } finally {
             temporaryDownload?.delete()

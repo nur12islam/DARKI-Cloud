@@ -35,18 +35,20 @@ class DarkiCloudApi(
     suspend fun moveFile(token: String, fileId: String, folderId: String, deviceId: String): JSONObject = patchJson("/api/v1/files/$fileId", token, JSONObject().apply { put("folderId", folderId); put("deviceId", deviceId) })
     suspend fun deleteFile(token: String, fileId: String, deviceId: String): JSONObject = delete("/api/v1/files/$fileId", token, mapOf("deviceId" to deviceId))
     suspend fun restoreFile(token: String, fileId: String, deviceId: String): JSONObject = postJson("/api/v1/files/$fileId/restore", token, JSONObject().put("deviceId", deviceId))
-    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, operationId: String, input: InputStream): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun permanentlyDeleteFile(token: String, fileId: String, deviceId: String): JSONObject = delete("/api/v1/files/$fileId/permanent", token, mapOf("deviceId" to deviceId))
+    suspend fun emptyTrash(token: String, deviceId: String): JSONObject = delete("/api/v1/trash", token, mapOf("deviceId" to deviceId))
+    suspend fun uploadFile(token: String, folderId: String, name: String, mimeType: String?, sizeBytes: Long, deviceId: String, operationId: String, input: InputStream, onProgress: ((Long) -> Unit)? = null): JSONObject = withContext(Dispatchers.IO) {
         val body = object : RequestBody() {
             override fun contentType() = (mimeType ?: "application/octet-stream").toMediaType()
             override fun contentLength() = sizeBytes
-            override fun writeTo(sink: okio.BufferedSink) { input.use { source -> source.copyTo(sink.outputStream()) } }
+            override fun writeTo(sink: okio.BufferedSink) { input.use { source -> val buffer = ByteArray(DEFAULT_BUFFER_SIZE); var total = 0L; while (true) { val read = source.read(buffer); if (read < 0) break; sink.write(buffer, 0, read); total += read; onProgress?.invoke(total) } } }
         }
         val url = baseUrl.newBuilder().addPathSegments("api/v1/files").apply { addQueryParameter("folderId", folderId); addQueryParameter("name", name) }.build()
         execute(Request.Builder().url(url).post(body).header("X-Device-Id", deviceId).header("X-Operation-Id", operationId).bearer(token).build())
     }
-    suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
+    suspend fun downloadFile(token: String, fileId: String, output: OutputStream, onProgress: ((Long) -> Unit)? = null) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
-        client.newCall(request).execute().use { response -> if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty()); response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response") }
+        client.newCall(request).execute().use { response -> if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty()); response.body?.byteStream()?.use { input -> val buffer = ByteArray(DEFAULT_BUFFER_SIZE); var total = 0L; while (true) { val read = input.read(buffer); if (read < 0) break; output.write(buffer, 0, read); total += read; onProgress?.invoke(total) } } ?: error("Empty file response") }
     }
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).get().bearer(token).build())
@@ -56,6 +58,8 @@ class DarkiCloudApi(
     private suspend fun delete(path: String, token: String, query: Map<String, String>): JSONObject = withContext(Dispatchers.IO) { val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).delete().bearer(token).build()) }
     private fun execute(request: Request): JSONObject { client.newCall(request).execute().use { response -> val text = response.body?.string().orEmpty(); if (!response.isSuccessful) throw DarkiCloudApiException(response.code, text); return if (text.isBlank()) JSONObject() else JSONObject(text) } }
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
+
+    companion object { private const val DEFAULT_BUFFER_SIZE = 8192 }
 }
 
 class DarkiCloudApiException(val statusCode: Int, responseBody: String) : IllegalStateException("DARKI Cloud request failed ($statusCode): $responseBody")

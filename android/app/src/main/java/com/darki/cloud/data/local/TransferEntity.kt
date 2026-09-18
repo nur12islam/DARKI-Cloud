@@ -19,4 +19,5 @@ data class TransferEntity(
     val lastError: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
+    val progressBytes: Long = 0L,
 )

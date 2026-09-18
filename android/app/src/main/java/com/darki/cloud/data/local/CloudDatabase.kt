@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [UserEntity::class, DeviceEntity::class, FolderEntity::class, FileEntity::class, TransferEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class CloudDatabase : RoomDatabase() {
@@ -22,9 +22,15 @@ abstract class CloudDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE transfers ADD COLUMN progressBytes INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun create(context: Context): CloudDatabase =
             Room.databaseBuilder(context, CloudDatabase::class.java, "darki-cloud.db")
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

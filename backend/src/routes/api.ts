@@ -155,5 +155,11 @@ export function createApiRouter(): Router {
   router.post("/files/:fileId/restore", requireAuth, async (req: AuthenticatedRequest, res, next) => {
     try { res.json({ file: await fileLifecycleService.restore(req.userId!, req.params.fileId as string, req.header("x-device-id") ?? null) }); } catch (error) { next(error); }
   });
+  router.delete("/files/:fileId/permanent", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try { res.json(await fileLifecycleService.permanentDelete(req.userId!, req.params.fileId as string, req.header("x-device-id") ?? null)); } catch (error) { next(error); }
+  });
+  router.delete("/trash", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+    try { res.json(await fileLifecycleService.emptyTrash(req.userId!, req.header("x-device-id") ?? null)); } catch (error) { next(error); }
+  });
   return router;
 }

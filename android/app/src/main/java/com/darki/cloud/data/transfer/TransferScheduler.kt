@@ -26,6 +26,10 @@ object TransferScheduler {
         )
     }
 
+    fun cancel(context: Context, transfer: TransferEntity) {
+        WorkManager.getInstance(context).cancelUniqueWork("darki-transfer-${transfer.id}")
+    }
+
     fun retry(context: Context, transfer: TransferEntity) {
         WorkManager.getInstance(context).enqueueUniqueWork(
             "darki-transfer-${transfer.id}",

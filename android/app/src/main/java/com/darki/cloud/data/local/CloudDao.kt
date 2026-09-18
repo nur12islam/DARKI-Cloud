@@ -19,12 +19,16 @@ interface CloudDao {
     fun observeAllFolders(): Flow<List<FolderEntity>>
     @Query("SELECT * FROM files WHERE folderId = :folderId AND deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     fun observeFiles(folderId: String): Flow<List<FileEntity>>
+    @Query("SELECT * FROM files WHERE deletedAt IS NULL AND (mimeType LIKE 'image/%' OR name LIKE '%.jpg' OR name LIKE '%.jpeg' OR name LIKE '%.png' OR name LIKE '%.webp' OR name LIKE '%.gif') ORDER BY COALESCE(modifiedAt, createdAt) DESC")
+    fun observePhotos(): Flow<List<FileEntity>>
     @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY modifiedAt DESC")
     fun observeDeletedFiles(): Flow<List<FileEntity>>
     @Query("SELECT * FROM transfers WHERE status IN ('queued','failed','running') ORDER BY createdAt ASC")
     fun observePendingTransfers(): Flow<List<TransferEntity>>
     @Query("SELECT * FROM transfers WHERE id = :id LIMIT 1")
     suspend fun findTransferById(id: String): TransferEntity?
+    @Query("UPDATE transfers SET progressBytes = :progress, updatedAt = :updatedAt WHERE id = :id")
+    fun updateTransferProgress(id: String, progress: Long, updatedAt: Long)
     @Query("DELETE FROM transfers WHERE id = :id")
     suspend fun deleteTransfer(id: String)
     @Query("DELETE FROM transfers")
@@ -39,8 +43,12 @@ interface CloudDao {
     suspend fun clearActiveFilesIn(folderId: String)
     @Query("UPDATE files SET deletedAt = :deletedAt WHERE id = :fileId")
     suspend fun markFileDeleted(fileId: String, deletedAt: Long)
+    @Query("DELETE FROM files WHERE id = :fileId AND deletedAt IS NOT NULL")
+    suspend fun hardDeleteFile(fileId: String)
     @Query("UPDATE files SET deletedAt = NULL WHERE id = :fileId")
     suspend fun markFileRestored(fileId: String)
+    @Query("DELETE FROM files WHERE deletedAt IS NOT NULL")
+    suspend fun clearDeletedFiles()
     @Query("UPDATE devices SET syncCursor = :cursor WHERE id = :deviceId")
     suspend fun updateCursor(deviceId: String, cursor: Long)
     @Query("DELETE FROM users") suspend fun clearUsers()

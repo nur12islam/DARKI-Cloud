@@ -13,6 +13,11 @@ export class FileRepository {
     return result.rows;
   }
 
+  async listDeletedByUser(userId: string): Promise<FileRecord[]> {
+    const result = await this.db.query<FileRecord>(`SELECT id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt" FROM files WHERE user_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC, id`, [userId]);
+    return result.rows;
+  }
+
   async searchByName(userId: string, query: string, limit: number): Promise<FileRecord[]> {
     const result = await this.db.query<FileRecord>(`SELECT id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt" FROM files WHERE user_id = $1 AND deleted_at IS NULL AND name ILIKE $2 ORDER BY lower(name), id LIMIT $3`, [userId, `%${query}%`, limit]);
     return result.rows;
@@ -23,6 +28,18 @@ export class FileRepository {
     return result.rows[0]!;
   }
 
+  async softDeleteByStorageObject(storageObjectId: string, userId: string): Promise<FileRecord | null> {
+    const result = await this.db.query<FileRecord>(
+      `UPDATE files SET deleted_at = now(), modified_at = now()
+        WHERE storage_object_id = $1 AND user_id = $2 AND deleted_at IS NULL
+        RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+                  name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
+                  created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`,
+      [storageObjectId, userId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async softDelete(id: string, userId: string): Promise<FileRecord | null> {
     const result = await this.db.query<FileRecord>(`UPDATE files SET deleted_at = now(), modified_at = now() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`, [id, userId]);
     return result.rows[0] ?? null;
@@ -31,6 +48,11 @@ export class FileRepository {
   async restore(id: string, userId: string): Promise<FileRecord | null> {
     const result = await this.db.query<FileRecord>(`UPDATE files SET deleted_at = NULL, modified_at = now() WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`, [id, userId]);
     return result.rows[0] ?? null;
+  }
+
+  async hardDelete(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.query(`DELETE FROM files WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`, [id, userId]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   async rename(id: string, userId: string, name: string): Promise<FileRecord | null> {

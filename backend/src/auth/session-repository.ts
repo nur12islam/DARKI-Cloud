@@ -36,6 +36,14 @@ export class SessionRepository {
     return result.rows[0] ?? null;
   }
 
+  async cleanupExpired(): Promise<number> {
+    const result = await this.db.query(
+      `DELETE FROM sessions
+        WHERE expires_at <= now() OR revoked_at IS NOT NULL AND revoked_at < now() - INTERVAL '30 days'`,
+    );
+    return result.rowCount ?? 0;
+  }
+
   async revokeByTokenHash(tokenHash: string): Promise<boolean> {
     const result = await this.db.query(
       `UPDATE sessions SET revoked_at = now()

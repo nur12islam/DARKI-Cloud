@@ -4,13 +4,17 @@
   "private": true,
   "description": "DARKI Cloud backend API",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "storage:reconcile": "tsx src/scripts/reconcile-storage.ts",
+    "maintenance:cleanup": "tsx src/scripts/cleanup.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.1",

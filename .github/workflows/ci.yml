@@ -2,8 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Build and upload the release APK"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,12 +38,33 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Install Android SDK components
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
+      - name: Verify Android SDK
+        run: |
+          test -d "$ANDROID_HOME/platforms/android-36"
+          test -d "$ANDROID_HOME/build-tools/36.0.0"
+          "$ANDROID_HOME/platform-tools/adb" --version
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug --stacktrace --no-daemon
+      - name: Build release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        working-directory: android
+        run: gradle assembleRelease --stacktrace --no-daemon
+      - name: Upload release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        uses: actions/upload-artifact@v4
+        with:
+          name: darki-cloud-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
