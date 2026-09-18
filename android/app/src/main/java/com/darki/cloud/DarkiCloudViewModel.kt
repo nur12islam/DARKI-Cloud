@@ -56,6 +56,8 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     fun renameFile(file: FileEntity, name: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to rename file") { repository.renameFile(token, file.id, name, device); repository.loadFolder(token, file.folderId) } }
     fun moveFile(file: FileEntity, folderId: String) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to move file") { repository.moveFile(token, file.id, folderId, device); refreshCurrentFolder(token) } }
     fun deleteFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to delete file") { repository.deleteFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
+    fun permanentlyDeleteFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to permanently delete file") { repository.permanentlyDeleteFile(token, file.id, device) } }
+    fun emptyTrash() { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to empty trash") { repository.emptyTrash(token, device) } }
     fun restoreFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to restore file") { repository.restoreFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
     fun uploadFile(uri: Uri, resolver: ContentResolver) {
         val folderId = _currentFolderId.value ?: return
