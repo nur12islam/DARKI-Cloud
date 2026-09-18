@@ -40,6 +40,14 @@ export class SyncChangeRepository {
     return result.rows[0] ?? null;
   }
 
+  async latestSequence(userId: string): Promise<string> {
+    const result = await this.db.query<{ sequence: string | null }>(
+      `SELECT MAX(sequence)::text AS sequence FROM sync_changes WHERE user_id = $1`,
+      [userId],
+    );
+    return result.rows[0]?.sequence ?? "0";
+  }
+
   async listAfter(userId: string, cursor: string, limit = 100): Promise<SyncChangeRecord[]> {
     const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
     const result = await this.db.query<SyncChangeRecord>(
