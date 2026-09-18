@@ -87,8 +87,199 @@ class MainActivity : ComponentActivity() {
 private sealed interface ManagementTarget { val name: String; data class FileTarget(val file: FileEntity) : ManagementTarget { override val name get() = file.name }; data class FolderTarget(val folder: FolderEntity) : ManagementTarget { override val name get() = folder.name } }
 @Composable private fun ManagementMenu(target: ManagementTarget, onDismiss: () -> Unit, onRename: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit, onRestore: () -> Unit, onDownload: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text(target.name, maxLines = 1) }, text = { Column { MenuButton("Rename", Icons.Default.Edit, onRename); MenuButton("Move", Icons.Default.DriveFileMove, onMove); if (target is ManagementTarget.FileTarget) { MenuButton("Download", Icons.Default.Download, onDownload); if (target.file.deletedAt == null) MenuButton("Move to trash", Icons.Default.Delete, onDelete) else MenuButton("Restore", Icons.Default.RestoreFromTrash, onRestore) } } }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }) }
 @Composable private fun MenuButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) { TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Icon(icon, null); Spacer(Modifier.width(12.dp)); Text(label, Modifier.weight(1f)) } }
-@Composable private fun TrashContent(files: List<FileEntity>, management: (FileEntity) -> Unit, onRestore: (FileEntity) -> Unit, onBack: () -> Unit) { Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }; Column { Text("Trash", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Deleted files", color = Color(0xFF858585)) } }; if (files.isEmpty()) Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.DeleteSweep, null, tint = Color(0xFF4D5B5E), Modifier.size(52.dp)); Spacer(Modifier.height(12.dp)); Text("Trash is empty", color = Color(0xFF9A9A9A)) } else LazyVerticalGrid(columns = GridCells.Adaptive(150.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 40.dp)) { items(count = files.size, key = { files[it].id }) { index -> val file = files[index]; DriveGridItem(file.name, "Deleted", false, file, null, onFileClick = { management(file) }) } } } }
-@Composable private fun DriveContent(folders: List<FolderEntity>, files: List<FileEntity>, error: String?, token: String?, onFolderClick: (FolderEntity) -> Unit, onFileClick: (FileEntity) -> Unit, onManage: (ManagementTarget) -> Unit) { Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) { Text("My Drive", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Your private cloud storage", color = Color(0xFF858585), Modifier.padding(top = 4.dp, bottom = 18.dp)); if (error != null) Text(error, color = Color(0xFFFFB4AB), Modifier.padding(bottom = 12.dp)); if (folders.isEmpty() && files.isEmpty() && error == null) { Column(Modifier.fillMaxWidth().padding(top = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.Cloud, null, tint = Color(0xFF4D5B5E), Modifier.size(52.dp)); Spacer(Modifier.height(14.dp)); Text("Your drive is empty", color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium); Text("Create a folder or upload a file to get started", color = Color(0xFF666666), style = MaterialTheme.typography.bodySmall, Modifier.padding(top = 6.dp)) } } else LazyVerticalGrid(columns = GridCells.Adaptive(150.dp), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 120.dp)) { items(count = folders.size, key = { folders[it].id }) { index -> val folder = folders[index]; DriveGridItem(folder.name, "Folder", true, null, token, onFolderClick = { onFolderClick(folder) }, onManage = { onManage(ManagementTarget.FolderTarget(folder)) }) }; items(count = files.size, key = { files[it].id }) { index -> val file = files[index]; DriveGridItem(file.name, formatSize(file.sizeBytes), false, file, token, onFileClick = { onFileClick(file) }, onManage = { onManage(ManagementTarget.FileTarget(file)) }) } } } }
+@Composable
+private fun TrashContent(
+    files: List<FileEntity>,
+    management: (FileEntity) -> Unit,
+    onRestore: (FileEntity) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            }
+            Column {
+                Text(
+                    text = "Trash",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Deleted files", color = Color(0xFF858585))
+            }
+        }
+
+        if (files.isEmpty()) {
+            EmptyState(
+                icon = Icons.Default.DeleteSweep,
+                title = "Trash is empty"
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                files.chunked(2).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { file ->
+                            Box(Modifier.weight(1f)) {
+                                DriveGridItem(
+                                    name = file.name,
+                                    subtitle = "Deleted",
+                                    isFolder = false,
+                                    file = file,
+                                    token = null,
+                                    onFileClick = { management(file) }
+                                )
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DriveContent(
+    folders: List<FolderEntity>,
+    files: List<FileEntity>,
+    error: String?,
+    token: String?,
+    onFolderClick: (FolderEntity) -> Unit,
+    onFileClick: (FileEntity) -> Unit,
+    onManage: (ManagementTarget) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+    ) {
+        Text(
+            text = "My Drive",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Your private cloud storage",
+            color = Color(0xFF858585),
+            modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
+        )
+
+        error?.let {
+            Text(
+                text = it,
+                color = Color(0xFFFFB4AB),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
+
+        if (folders.isEmpty() && files.isEmpty() && error == null) {
+            EmptyState(
+                icon = Icons.Default.Cloud,
+                title = "Your drive is empty",
+                subtitle = "Create a folder or upload a file to get started"
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                folders.chunked(2).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { folder ->
+                            Box(Modifier.weight(1f)) {
+                                DriveGridItem(
+                                    name = folder.name,
+                                    subtitle = "Folder",
+                                    isFolder = true,
+                                    file = null,
+                                    token = token,
+                                    onFolderClick = { onFolderClick(folder) },
+                                    onManage = {
+                                        onManage(ManagementTarget.FolderTarget(folder))
+                                    }
+                                )
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+
+                files.chunked(2).forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { file ->
+                            Box(Modifier.weight(1f)) {
+                                DriveGridItem(
+                                    name = file.name,
+                                    subtitle = formatSize(file.sizeBytes),
+                                    isFolder = false,
+                                    file = file,
+                                    token = token,
+                                    onFileClick = { onFileClick(file) },
+                                    onManage = {
+                                        onManage(ManagementTarget.FileTarget(file))
+                                    }
+                                )
+                            }
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String? = null
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 80.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color(0xFF4D5B5E),
+            modifier = Modifier.size(52.dp)
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(title, color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium)
+        subtitle?.let {
+            Text(
+                text = it,
+                color = Color(0xFF666666),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+    }
+}
+
 @Composable private fun DriveGridItem(name: String, subtitle: String, isFolder: Boolean, file: FileEntity?, token: String?, onFolderClick: (() -> Unit)? = null, onFileClick: (() -> Unit)? = null, onManage: (() -> Unit)? = null) { val mime = file?.mimeType ?: guessMime(file?.name); val click = onFolderClick ?: onFileClick ?: {}; Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).clickable(onClick = click).padding(10.dp)) { Box(Modifier.fillMaxWidth().aspectRatio(1.15f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF171717))) { when { isFolder -> Icon(Icons.Default.Folder, null, tint = Color(0xFFB7F7FF), Modifier.align(Alignment.Center).size(48.dp)); mime?.startsWith("image/") == true && token != null -> AuthenticatedThumbnail(file!!.id, token); mime?.startsWith("video/") == true -> Icon(Icons.Default.PlayCircle, null, tint = Color(0xFFB7F7FF), Modifier.align(Alignment.Center).size(50.dp)); else -> Icon(Icons.Default.Description, null, tint = Color(0xFF9A9A9A), Modifier.align(Alignment.Center).size(48.dp)) }; if (onManage != null) IconButton(onClick = onManage, modifier = Modifier.align(Alignment.TopEnd).size(38.dp)) { Icon(Icons.Default.MoreVert, "More", tint = Color.White) } }; Spacer(Modifier.height(9.dp)); Text(name, maxLines = 1, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), Modifier.padding(top = 3.dp)) } }
 @Composable private fun AuthenticatedThumbnail(fileId: String, token: String) { val context = LocalContext.current; var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }; LaunchedEffect(fileId, token) { withContext(Dispatchers.IO) { runCatching { val temp = File.createTempFile("darki-thumb-", ".img", context.cacheDir); try { OkHttpClient().newCall(Request.Builder().url(BuildConfig.DARKI_CLOUD_BASE_URL.trimEnd('/') + "/api/v1/files/$fileId/content").header("Authorization", "Bearer $token").build()).execute().use { response -> if (!response.isSuccessful) return@runCatching; response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: return@runCatching }; val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(temp.absolutePath, bounds); if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching; var sample = 1; while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2; bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }) } finally { temp.delete() } } } }; if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Image, null, tint = Color(0xFFB7F7FF), Modifier.size(44.dp)) } }
 @Composable private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text(name, maxLines = 1) }, text = { if (token == null) Text("Your session has expired.") else when { mimeType.startsWith("video/") -> VideoPreview(api, token, fileId); mimeType.startsWith("image/") -> SafeImagePreview(api, token, fileId); else -> Text("Preview is not available for this file type.") } }, confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }) }
