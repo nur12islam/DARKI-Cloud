@@ -246,6 +246,7 @@ private fun PhotoViewer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var actionMessage by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(file.mimeType ?: "image/jpeg"),
     ) { uri ->
@@ -348,23 +349,38 @@ private fun PhotoViewer(
                         Icon(Icons.Default.Download, "Save", tint = Color.White)
                     }
                     IconButton(
-                        onClick = {
-                            if (token != null && deviceId != null) {
-                                scope.launch {
-                                    actionMessage = runCatching {
-                                        api.deleteFile(token, file.id, deviceId)
-                                        onDismiss()
-                                        "Moved to trash"
-                                    }.getOrElse { "Delete failed" }
-                                }
-                            }
-                        },
+                        onClick = { confirmDelete = true },
                     ) {
                         Icon(Icons.Default.Delete, "Delete", tint = Color.White)
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, "Close", tint = Color.White)
                     }
+                }
+
+                if (confirmDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmDelete = false },
+                        title = { Text("Move to Trash?") },
+                        text = { Text("This photo will be removed from your Drive.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmDelete = false
+                                if (token != null && deviceId != null) {
+                                    scope.launch {
+                                        actionMessage = runCatching {
+                                            api.deleteFile(token, file.id, deviceId)
+                                            onDismiss()
+                                            "Moved to Trash"
+                                        }.getOrElse { "Delete failed" }
+                                    }
+                                }
+                            }) { Text("Move to Trash") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                        },
+                    )
                 }
 
                 Text(
