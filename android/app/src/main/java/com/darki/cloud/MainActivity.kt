@@ -44,6 +44,7 @@ import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.FolderEntity
 import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.repository.CloudRepository
+import com.darki.cloud.data.sync.SyncScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -55,7 +56,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: CloudRepository
     private lateinit var api: DarkiCloudApi
     private var pendingAuthCode: String? = null
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); sessionStore = SessionStore(applicationContext); val db = CloudDatabase.create(applicationContext); api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient()); repository = CloudRepository(api, db.cloudDao()); pendingAuthCode = extractAuthCode(intent); render() }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); SyncScheduler.ensureScheduled(applicationContext); sessionStore = SessionStore(applicationContext); val db = CloudDatabase.create(applicationContext); api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient()); repository = CloudRepository(api, db.cloudDao()); pendingAuthCode = extractAuthCode(intent); render() }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); pendingAuthCode = extractAuthCode(intent); render() }
     private fun render() { setContent { val vm: DarkiCloudViewModel = viewModel(factory = DarkiCloudViewModel.factory(repository, sessionStore, applicationContext)); DarkiCloudApp(vm, api, pendingAuthCode, ::openTelegramLogin) } }
     private fun openTelegramLogin() = startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.telegramLoginUrl())))
