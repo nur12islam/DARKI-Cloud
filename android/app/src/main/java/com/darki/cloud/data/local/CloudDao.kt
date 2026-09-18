@@ -19,6 +19,8 @@ interface CloudDao {
     fun observeAllFolders(): Flow<List<FolderEntity>>
     @Query("SELECT * FROM files WHERE folderId = :folderId AND deletedAt IS NULL ORDER BY name COLLATE NOCASE")
     fun observeFiles(folderId: String): Flow<List<FileEntity>>
+    @Query("SELECT * FROM files WHERE deletedAt IS NULL AND (mimeType LIKE 'image/%' OR name LIKE '%.jpg' OR name LIKE '%.jpeg' OR name LIKE '%.png' OR name LIKE '%.webp' OR name LIKE '%.gif') ORDER BY COALESCE(modifiedAt, createdAt) DESC")
+    fun observePhotos(): Flow<List<FileEntity>>
     @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY modifiedAt DESC")
     fun observeDeletedFiles(): Flow<List<FileEntity>>
     @Query("SELECT * FROM transfers WHERE status IN ('queued','failed','running') ORDER BY createdAt ASC")
