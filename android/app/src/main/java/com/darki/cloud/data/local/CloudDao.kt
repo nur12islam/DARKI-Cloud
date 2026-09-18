@@ -41,6 +41,8 @@ interface CloudDao {
     suspend fun clearActiveFilesIn(folderId: String)
     @Query("UPDATE files SET deletedAt = :deletedAt WHERE id = :fileId")
     suspend fun markFileDeleted(fileId: String, deletedAt: Long)
+    @Query("DELETE FROM files WHERE id = :fileId AND deletedAt IS NOT NULL")
+    suspend fun hardDeleteFile(fileId: String)
     @Query("UPDATE files SET deletedAt = NULL WHERE id = :fileId")
     suspend fun markFileRestored(fileId: String)
     @Query("UPDATE devices SET syncCursor = :cursor WHERE id = :deviceId")
