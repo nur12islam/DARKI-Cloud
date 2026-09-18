@@ -27,6 +27,8 @@ interface CloudDao {
     fun observePendingTransfers(): Flow<List<TransferEntity>>
     @Query("SELECT * FROM transfers WHERE id = :id LIMIT 1")
     suspend fun findTransferById(id: String): TransferEntity?
+    @Query("UPDATE transfers SET progressBytes = :progress, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateTransferProgress(id: String, progress: Long, updatedAt: Long)
     @Query("DELETE FROM transfers WHERE id = :id")
     suspend fun deleteTransfer(id: String)
     @Query("DELETE FROM transfers")
