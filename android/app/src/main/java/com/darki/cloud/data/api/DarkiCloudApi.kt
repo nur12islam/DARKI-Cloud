@@ -60,7 +60,8 @@ class DarkiCloudApi(
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
 }
 
-companion object { private const val DEFAULT_BUFFER_SIZE = 8192 }
+
+    companion object { private const val DEFAULT_BUFFER_SIZE = 8192 }
 }
 
 class DarkiCloudApiException(val statusCode: Int, responseBody: String) : IllegalStateException("DARKI Cloud request failed ($statusCode): $responseBody")
