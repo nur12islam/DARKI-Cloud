@@ -3,6 +3,7 @@ package com.darki.cloud
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -258,6 +260,23 @@ private fun PhotoViewer(
             }
         }
     }
+    fun sharePhoto() {
+        if (token == null) return
+        scope.launch {
+            actionMessage = runCatching {
+                val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                val output = File(dir, file.name)
+                output.outputStream().use { api.downloadFile(token, file.id, it) }
+                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", output)
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = file.mimeType ?: "image/*"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Share photo"))
+                "Ready to share"
+            }.getOrElse { "Share failed" }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
@@ -318,6 +337,9 @@ private fun PhotoViewer(
                 Row(
                     modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 ) {
+                    IconButton(onClick = { sharePhoto() }) {
+                        Icon(Icons.Default.Share, "Share", tint = Color.White)
+                    }
                     IconButton(
                         onClick = {
                             saveLauncher.launch(file.name)
