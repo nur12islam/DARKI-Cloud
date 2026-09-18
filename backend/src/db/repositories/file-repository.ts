@@ -28,6 +28,18 @@ export class FileRepository {
     return result.rows[0]!;
   }
 
+  async softDeleteByStorageObject(storageObjectId: string, userId: string): Promise<FileRecord | null> {
+    const result = await this.db.query<FileRecord>(
+      `UPDATE files SET deleted_at = now(), modified_at = now()
+        WHERE storage_object_id = $1 AND user_id = $2 AND deleted_at IS NULL
+        RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId",
+                  name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256,
+                  created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`,
+      [storageObjectId, userId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async softDelete(id: string, userId: string): Promise<FileRecord | null> {
     const result = await this.db.query<FileRecord>(`UPDATE files SET deleted_at = now(), modified_at = now() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL RETURNING id, user_id AS "userId", folder_id AS "folderId", storage_object_id AS "storageObjectId", name, mime_type AS "mimeType", size_bytes AS "sizeBytes", sha256, created_at AS "createdAt", modified_at AS "modifiedAt", deleted_at AS "deletedAt"`, [id, userId]);
     return result.rows[0] ?? null;
