@@ -1,4 +1,4 @@
-{DARKI_CLOUD_DOMAIN} {
+{$DARKI_CLOUD_DOMAIN} {
   encode gzip
   reverse_proxy backend:8080
 }
