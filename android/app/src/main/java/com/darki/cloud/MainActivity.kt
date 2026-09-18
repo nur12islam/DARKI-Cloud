@@ -280,7 +280,87 @@ private fun EmptyState(
     }
 }
 
-@Composable private fun DriveGridItem(name: String, subtitle: String, isFolder: Boolean, file: FileEntity?, token: String?, onFolderClick: (() -> Unit)? = null, onFileClick: (() -> Unit)? = null, onManage: (() -> Unit)? = null) { val mime = file?.mimeType ?: guessMime(file?.name); val click = onFolderClick ?: onFileClick ?: {}; Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)).clickable(onClick = click).padding(10.dp)) { Box(Modifier.fillMaxWidth().aspectRatio(1.15f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF171717))) { when { isFolder -> Icon(Icons.Default.Folder, null, tint = Color(0xFFB7F7FF), Modifier.align(Alignment.Center).size(48.dp)); mime?.startsWith("image/") == true && token != null -> AuthenticatedThumbnail(file!!.id, token); mime?.startsWith("video/") == true -> Icon(Icons.Default.PlayCircle, null, tint = Color(0xFFB7F7FF), Modifier.align(Alignment.Center).size(50.dp)); else -> Icon(Icons.Default.Description, null, tint = Color(0xFF9A9A9A), Modifier.align(Alignment.Center).size(48.dp)) }; if (onManage != null) IconButton(onClick = onManage, modifier = Modifier.align(Alignment.TopEnd).size(38.dp)) { Icon(Icons.Default.MoreVert, "More", tint = Color.White) } }; Spacer(Modifier.height(9.dp)); Text(name, maxLines = 1, fontWeight = FontWeight.Medium); Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Color(0xFF777777), Modifier.padding(top = 3.dp)) } }
+@Composable
+private fun DriveGridItem(
+    name: String,
+    subtitle: String,
+    isFolder: Boolean,
+    file: FileEntity?,
+    token: String?,
+    onFolderClick: (() -> Unit)? = null,
+    onFileClick: (() -> Unit)? = null,
+    onManage: (() -> Unit)? = null
+) {
+    val mime = file?.mimeType ?: guessMime(file?.name)
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF101010))
+            .clickable { (onFolderClick ?: onFileClick)?.invoke() }
+            .padding(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.15f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF171717))
+        ) {
+            when {
+                isFolder -> {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "Folder",
+                        tint = Color(0xFFB7F7FF),
+                        modifier = Modifier.align(Alignment.Center).size(48.dp)
+                    )
+                }
+                mime?.startsWith("image/") == true && token != null && file != null -> {
+                    AuthenticatedThumbnail(fileId = file.id, token = token)
+                }
+                mime?.startsWith("video/") == true -> {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = "Video",
+                        tint = Color(0xFFB7F7FF),
+                        modifier = Modifier.align(Alignment.Center).size(50.dp)
+                    )
+                }
+                else -> {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = "File",
+                        tint = Color(0xFF9A9A9A),
+                        modifier = Modifier.align(Alignment.Center).size(48.dp)
+                    )
+                }
+            }
+
+            onManage?.let { manage ->
+                IconButton(
+                    onClick = manage,
+                    modifier = Modifier.align(Alignment.TopEnd).size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(9.dp))
+        Text(text = name, maxLines = 1, fontWeight = FontWeight.Medium)
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF777777),
+            modifier = Modifier.padding(top = 3.dp)
+        )
+    }
+}
+
 @Composable private fun AuthenticatedThumbnail(fileId: String, token: String) { val context = LocalContext.current; var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }; LaunchedEffect(fileId, token) { withContext(Dispatchers.IO) { runCatching { val temp = File.createTempFile("darki-thumb-", ".img", context.cacheDir); try { OkHttpClient().newCall(Request.Builder().url(BuildConfig.DARKI_CLOUD_BASE_URL.trimEnd('/') + "/api/v1/files/$fileId/content").header("Authorization", "Bearer $token").build()).execute().use { response -> if (!response.isSuccessful) return@runCatching; response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: return@runCatching }; val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(temp.absolutePath, bounds); if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching; var sample = 1; while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2; bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }) } finally { temp.delete() } } } }; if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Default.Image, null, tint = Color(0xFFB7F7FF), Modifier.size(44.dp)) } }
 @Composable private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text(name, maxLines = 1) }, text = { if (token == null) Text("Your session has expired.") else when { mimeType.startsWith("video/") -> VideoPreview(api, token, fileId); mimeType.startsWith("image/") -> SafeImagePreview(api, token, fileId); else -> Text("Preview is not available for this file type.") } }, confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }) }
 @Composable private fun SafeImagePreview(api: DarkiCloudApi, token: String, fileId: String) { val context = LocalContext.current; var bitmap by remember(fileId, token) { mutableStateOf<android.graphics.Bitmap?>(null) }; var loading by remember(fileId, token) { mutableStateOf(true) }; LaunchedEffect(fileId, token) { loading = true; withContext(Dispatchers.IO) { runCatching { val temp = File.createTempFile("darki-image-", ".preview", context.cacheDir); try { OkHttpClient().newCall(Request.Builder().url(api.fileContentUrl(fileId)).header("Authorization", "Bearer $token").build()).execute().use { response -> if (!response.isSuccessful) error("Image request failed"); response.body?.byteStream()?.use { input -> temp.outputStream().use { output -> input.copyTo(output) } } ?: error("Empty image response") }; val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeFile(temp.absolutePath, bounds); var sample = 1; while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2; bitmap = BitmapFactory.decodeFile(temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = android.graphics.Bitmap.Config.RGB_565 }) } finally { temp.delete() } } }; loading = false }; if (loading) Box(Modifier.fillMaxWidth().height(360.dp), Alignment.Center) { CircularProgressIndicator() } else if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit) else Text("Unable to preview this image. Try downloading it instead.") }
