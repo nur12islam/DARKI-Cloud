@@ -15,6 +15,7 @@ import com.darki.cloud.data.local.SessionStore
 import com.darki.cloud.data.local.TransferEntity
 import com.darki.cloud.data.repository.CloudRepository
 import com.darki.cloud.data.transfer.TransferScheduler
+import com.darki.cloud.data.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -41,7 +42,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     private val _previewName = MutableStateFlow<String?>(null); val previewName: Flow<String?> = _previewName
     private val _error = MutableStateFlow<String?>(null); val error: Flow<String?> = _error
     init { refreshRoot() }
-    fun completeTelegramLogin(code: String) { viewModelScope.launch { _error.value = null; runCatching { val response = repository.exchangeTelegramLogin(code); sessionStore.token = response.getString("token"); sessionStore.userId = response.getJSONObject("user").getString("id"); val root = repository.loadRoot(sessionStore.token!!); sessionStore.rootFolderId = root.id; _currentFolderId.value = root.id; ensureDeviceAndSync(sessionStore.token!!); _isAuthenticated.value = true }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" } } }
+    fun completeTelegramLogin(code: String) { viewModelScope.launch { _error.value = null; runCatching { val response = repository.exchangeTelegramLogin(code); sessionStore.token = response.getString("token"); sessionStore.userId = response.getJSONObject("user").getString("id"); val root = repository.loadRoot(sessionStore.token!!); sessionStore.rootFolderId = root.id; _currentFolderId.value = root.id; ensureDeviceAndSync(sessionStore.token!!); SyncScheduler.enqueueNow(appContext); _isAuthenticated.value = true }.onFailure { _error.value = it.message ?: "Unable to complete Telegram login" } } }
     fun logout() { val token = sessionStore.token; viewModelScope.launch { runCatching { repository.logout(token) }; closePreview(); _searchResults.value = null; sessionStore.clear(); _currentFolderId.value = null; _folderStack.value = emptyList(); _isAuthenticated.value = false } }
     fun refreshRoot() { val token = sessionStore.token ?: return; viewModelScope.launch { _isRefreshing.value = true; _error.value = null; runCatching { val root = repository.loadRoot(token); sessionStore.rootFolderId = root.id; if (_currentFolderId.value == null) _currentFolderId.value = root.id; ensureDeviceAndSync(token) }.onFailure { error -> if (error is DarkiCloudApiException && error.statusCode == 401) { closePreview(); sessionStore.clear(); _isAuthenticated.value = false }; _error.value = error.message ?: "Unable to synchronize cloud data" }; _isRefreshing.value = false } }
     fun search(query: String) { val token = sessionStore.token ?: return; val normalized = query.trim(); if (normalized.isEmpty()) { _searchResults.value = null; return }; viewModelScope.launch { _searching.value = true; _error.value = null; runCatching { repository.search(token, normalized) }.onSuccess { _searchResults.value = it }.onFailure { _error.value = it.message ?: "Unable to search cloud" }; _searching.value = false } }
