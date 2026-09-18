@@ -31,6 +31,11 @@ export class StorageObjectRepository {
         WHERE id = $2 AND user_id = $3`, [state, id, userId]);
   }
 
+  async hardDelete(id: string, userId: string): Promise<boolean> {
+    const result = await this.db.query(`DELETE FROM storage_objects WHERE id = $1 AND user_id = $2 AND state = 'deleted'`, [id, userId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async setDeleted(id: string, userId: string): Promise<void> {
     await this.db.query(`UPDATE storage_objects SET state = 'deleted', deleted_at = now(), modified_at = now() WHERE id = $1 AND user_id = $2`, [id, userId]);
   }
