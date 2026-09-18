@@ -27,6 +27,7 @@ import com.darki.cloud.data.local.TransferEntity
 fun TransferDialog(
     transfers: List<TransferEntity>,
     onRetry: (TransferEntity) -> Unit,
+    onCancel: (TransferEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -38,7 +39,7 @@ fun TransferDialog(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(transfers, key = { it.id }) { transfer ->
-                        TransferRow(transfer, onRetry)
+                        TransferRow(transfer, onRetry, onCancel)
                     }
                 }
             }
@@ -48,7 +49,7 @@ fun TransferDialog(
 }
 
 @Composable
-private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> Unit) {
+private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> Unit, onCancel: (TransferEntity) -> Unit) {
     val uploading = transfer.type == "upload"
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -72,6 +73,8 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Text("Retry", Modifier.padding(start = 6.dp))
                 }
+            } else if (transfer.status == "queued" || transfer.status == "running") {
+                TextButton(onClick = { onCancel(transfer) }) { Text("Cancel") }
             }
         }
     }
