@@ -8,7 +8,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.ActivityResult\nimport androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,7 +67,8 @@ class MainActivity : ComponentActivity() {
     MaterialTheme { Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
         val folders by vm.folders.collectAsState(initial = emptyList()); val allFolders by vm.allFolders.collectAsState(initial = emptyList()); val files by vm.files.collectAsState(initial = emptyList()); val deleted by vm.deletedFiles.collectAsState(initial = emptyList()); val transfers by vm.transfers.collectAsState(initial = emptyList()); val refreshing by vm.isRefreshing.collectAsState(initial = false); val uploading by vm.isUploading.collectAsState(initial = false); val error by vm.error.collectAsState(initial = null); val authenticated by vm.isAuthenticated.collectAsState(initial = false); val stack by vm.folderStack.collectAsState(initial = emptyList()); val previewId by vm.previewFileId.collectAsState(initial = null); val previewMime by vm.previewMimeType.collectAsState(initial = null); val previewName by vm.previewName.collectAsState(initial = null); val token = vm.previewToken(); val context = LocalContext.current
         var createFolder by remember { mutableStateOf(false) }; var management by remember { mutableStateOf<ManagementTarget?>(null) }; var rename by remember { mutableStateOf<ManagementTarget?>(null) }; var move by remember { mutableStateOf<ManagementTarget?>(null) }; var delete by remember { mutableStateOf<FileEntity?>(null) }; var restore by remember { mutableStateOf<FileEntity?>(null) }; var trash by remember { mutableStateOf(false) }; var showTransfers by remember { mutableStateOf(false) }
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let { uri -> vm.uploadFile(uri, context.contentResolver) } }\n        val searchLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult -> if (result.resultCode == android.app.Activity.RESULT_OK) { val data = result.data; data?.getStringExtra("folder_id")?.let(vm::openFolderById); data?.getStringExtra("file_id")?.let(vm::previewFileById) } }
+        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let { uri -> vm.uploadFile(uri, context.contentResolver) } }
+        val searchLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult -> if (result.resultCode == android.app.Activity.RESULT_OK) { val data = result.data; data?.getStringExtra("folder_id")?.let(vm::openFolderById); data?.getStringExtra("file_id")?.let(vm::previewFileById) } }
         val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> if (uri != null && management is ManagementTarget.FileTarget) { val file = (management as ManagementTarget.FileTarget).file; vm.enqueueDownload(file, uri, context.contentResolver); management = null } }
         if (authenticated && stack.isNotEmpty() && !trash) BackHandler { vm.navigateBack() }
         if (previewId != null && previewMime != null) MediaPreviewDialog(api, token, previewId!!, previewMime!!, previewName ?: "Preview", vm::closePreview)
