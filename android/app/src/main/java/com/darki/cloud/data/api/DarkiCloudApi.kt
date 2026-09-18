@@ -46,9 +46,9 @@ class DarkiCloudApi(
         val url = baseUrl.newBuilder().addPathSegments("api/v1/files").apply { addQueryParameter("folderId", folderId); addQueryParameter("name", name) }.build()
         execute(Request.Builder().url(url).post(body).header("X-Device-Id", deviceId).header("X-Operation-Id", operationId).bearer(token).build())
     }
-    suspend fun downloadFile(token: String, fileId: String, output: OutputStream) = withContext(Dispatchers.IO) {
+    suspend fun downloadFile(token: String, fileId: String, output: OutputStream, onProgress: ((Long) -> Unit)? = null) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(fileContentUrl(fileId)).get().bearer(token).build()
-        client.newCall(request).execute().use { response -> if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty()); response.body?.byteStream()?.use { input -> input.copyTo(output) } ?: error("Empty file response") }
+        client.newCall(request).execute().use { response -> if (!response.isSuccessful) throw DarkiCloudApiException(response.code, response.body?.string().orEmpty()); response.body?.byteStream()?.use { input -> val buffer = ByteArray(DEFAULT_BUFFER_SIZE); var total = 0L; while (true) { val read = input.read(buffer); if (read < 0) break; output.write(buffer, 0, read); total += read; onProgress?.invoke(total) } } ?: error("Empty file response") }
     }
     private suspend fun get(path: String, token: String, query: Map<String, String> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).get().bearer(token).build())
