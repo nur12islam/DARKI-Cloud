@@ -2,6 +2,9 @@ package com.darki.cloud
 
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -13,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +41,7 @@ import com.darki.cloud.data.local.FileEntity
 import com.darki.cloud.data.local.SessionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -52,7 +58,7 @@ class PhotosActivity : ComponentActivity() {
         val api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         setContent {
             val photos by db.cloudDao().observePhotos().collectAsState(initial = emptyList())
-            PhotosScreen(photos, store.token, api, ::finish)
+            PhotosScreen(photos, store.token, store.deviceId, api, ::finish)
         }
     }
 }
@@ -61,6 +67,7 @@ class PhotosActivity : ComponentActivity() {
 private fun PhotosScreen(
     photos: List<FileEntity>,
     token: String?,
+    deviceId: String?,
     api: DarkiCloudApi,
     onBack: () -> Unit,
 ) {
@@ -137,6 +144,7 @@ private fun PhotosScreen(
             photos = photos,
             initialIndex = selectedIndex,
             token = token,
+            deviceId = deviceId,
             api = api,
             onDismiss = { selectedIndex = -1 },
         )
@@ -223,6 +231,7 @@ private fun PhotoViewer(
     photos: List<FileEntity>,
     initialIndex: Int,
     token: String?,
+    deviceId: String?,
     api: DarkiCloudApi,
     onDismiss: () -> Unit,
 ) {
@@ -232,6 +241,23 @@ private fun PhotoViewer(
     var offsetY by remember(currentIndex) { mutableFloatStateOf(0f) }
 
     val file = photos.getOrNull(currentIndex) ?: return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(file.mimeType ?: "image/jpeg"),
+    ) { uri ->
+        if (uri != null && token != null) {
+            scope.launch {
+                actionMessage = runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        api.downloadFile(token, file.id, output)
+                    } ?: error("Unable to open destination")
+                    "Saved to device"
+                }.getOrElse { "Save failed" }
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
@@ -289,15 +315,38 @@ private fun PhotoViewer(
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
+                Row(
                     modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 ) {
-                    Icon(Icons.Default.Close, "Close", tint = Color.White)
+                    IconButton(
+                        onClick = {
+                            saveLauncher.launch(file.name)
+                        },
+                    ) {
+                        Icon(Icons.Default.Download, "Save", tint = Color.White)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (token != null && deviceId != null) {
+                                scope.launch {
+                                    actionMessage = runCatching {
+                                        api.deleteFile(token, file.id, deviceId)
+                                        onDismiss()
+                                        "Moved to trash"
+                                    }.getOrElse { "Delete failed" }
+                                }
+                            }
+                        },
+                    ) {
+                        Icon(Icons.Default.Delete, "Delete", tint = Color.White)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, "Close", tint = Color.White)
+                    }
                 }
 
                 Text(
-                    (currentIndex + 1).toString() + " / " + photos.size + "  •  " + file.name,
+                    actionMessage ?: ((currentIndex + 1).toString() + " / " + photos.size + "  •  " + file.name),
                     color = Color.White,
                     maxLines = 1,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp),
