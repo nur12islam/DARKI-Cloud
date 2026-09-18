@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 
 class PhotosActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +64,7 @@ private fun PhotosScreen(
     api: DarkiCloudApi,
     onBack: () -> Unit,
 ) {
-    var selectedPhoto by remember { mutableStateOf<FileEntity?>(null) }
+    var selectedIndex by remember { mutableIntStateOf(-1) }
 
     Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
         Column(Modifier.fillMaxSize()) {
@@ -115,7 +117,7 @@ private fun PhotosScreen(
                                                     file = file,
                                                     token = token,
                                                     api = api,
-                                                    onClick = { selectedPhoto = file },
+                                                    onClick = { selectedIndex = photos.indexOf(file) },
                                                 )
                                             }
                                         }
@@ -130,8 +132,14 @@ private fun PhotosScreen(
         }
     }
 
-    selectedPhoto?.let { file ->
-        PhotoViewer(file, token, api) { selectedPhoto = null }
+    if (selectedIndex in photos.indices) {
+        PhotoViewer(
+            photos = photos,
+            initialIndex = selectedIndex,
+            token = token,
+            api = api,
+            onDismiss = { selectedIndex = -1 },
+        )
     }
 }
 
@@ -212,14 +220,18 @@ private fun rememberPhotoBitmap(
 
 @Composable
 private fun PhotoViewer(
-    file: FileEntity,
+    photos: List<FileEntity>,
+    initialIndex: Int,
     token: String?,
     api: DarkiCloudApi,
     onDismiss: () -> Unit,
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    var currentIndex by remember(initialIndex) { mutableIntStateOf(initialIndex) }
+    var scale by remember(currentIndex) { mutableFloatStateOf(1f) }
+    var offsetX by remember(currentIndex) { mutableFloatStateOf(0f) }
+    var offsetY by remember(currentIndex) { mutableFloatStateOf(0f) }
+
+    val file = photos.getOrNull(currentIndex) ?: return
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
@@ -232,15 +244,33 @@ private fun PhotoViewer(
                         contentDescription = file.name,
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(1f, 5f)
-                                    if (scale > 1f) {
-                                        offsetX += pan.x
-                                        offsetY += pan.y
-                                    } else {
-                                        offsetX = 0f
-                                        offsetY = 0f
+                            .pointerInput(scale, currentIndex) {
+                                if (scale <= 1.01f) {
+                                    detectDragGestures(
+                                        onDragEnd = {
+                                            if (abs(offsetX) > 120f) {
+                                                val direction = if (offsetX < 0f) 1 else -1
+                                                val next = (currentIndex + direction).coerceIn(0, photos.lastIndex)
+                                                if (next != currentIndex) currentIndex = next
+                                                offsetX = 0f
+                                            }
+                                        },
+                                        onDragCancel = { offsetX = 0f },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            offsetX += dragAmount.x
+                                        },
+                                    )
+                                } else {
+                                    detectTransformGestures { _, pan, zoom, _ ->
+                                        scale = (scale * zoom).coerceIn(1f, 5f)
+                                        if (scale > 1f) {
+                                            offsetX += pan.x
+                                            offsetY += pan.y
+                                        } else {
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        }
                                     }
                                 }
                             }
@@ -267,7 +297,7 @@ private fun PhotoViewer(
                 }
 
                 Text(
-                    file.name,
+                    (currentIndex + 1).toString() + " / " + photos.size + "  •  " + file.name,
                     color = Color.White,
                     maxLines = 1,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp),
