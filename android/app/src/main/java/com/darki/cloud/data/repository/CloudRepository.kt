@@ -46,6 +46,15 @@ class CloudRepository(private val api: DarkiCloudApi, private val dao: CloudDao)
     private suspend fun refreshFileEntity(token: String, fileId: String, payload: JSONObject = JSONObject()) { val folderId = dao.findFileById(fileId)?.folderId ?: payload.optString("folderId").takeIf { it.isNotBlank() } ?: return; runCatching { val response = api.getFolder(token, folderId); val files = response.optJSONArray("files") ?: return@runCatching; for (i in 0 until files.length()) { val file = files.getJSONObject(i); if (file.optString("id") == fileId) { dao.upsertFiles(listOf(file.toFileEntity(file.getString("userId")))); return@runCatching } } } }
     private suspend fun refreshByPayload(token: String, type: String, id: String, payload: JSONObject) { when (type) { "folder" -> refreshFolderEntity(token, id); "file" -> refreshFileEntity(token, id, payload) } }
     suspend fun logout(token: String?) { if (token != null) runCatching { api.logout(token) }; dao.clearTransfers(); dao.clearFiles(); dao.clearFolders(); dao.clearDevices(); dao.clearUsers() }
+    private fun JSONObject.toDeviceEntity(): DeviceEntity = DeviceEntity(
+        id = getString("id"),
+        userId = getString("userId"),
+        name = getString("name"),
+        platform = getString("platform"),
+        lastSeenAt = optTimestamp("lastSeenAt"),
+        syncCursor = optLong("syncCursor", 0L),
+    )
+
     private fun JSONObject.toFolderEntity(userId: String) = FolderEntity(getString("id"), userId, if (isNull("parentId")) null else getString("parentId"), getString("name"), optTimestamp("createdAt"), optTimestamp("modifiedAt"), optTimestamp("deletedAt"))
     private fun JSONObject.toFolderEntity() = FolderEntity(getString("id"), getString("userId"), if (isNull("parentId")) null else getString("parentId"), getString("name"), optTimestamp("createdAt"), optTimestamp("modifiedAt"), optTimestamp("deletedAt"))
     private fun JSONObject.toFileEntity(userId: String) = FileEntity(getString("id"), userId, getString("folderId"), if (isNull("storageObjectId")) null else getString("storageObjectId"), getString("name"), if (isNull("mimeType")) null else getString("mimeType"), if (isNull("sizeBytes")) null else optLong("sizeBytes"), if (isNull("sha256")) null else getString("sha256"), optTimestamp("createdAt"), optTimestamp("modifiedAt"), optTimestamp("deletedAt"))
