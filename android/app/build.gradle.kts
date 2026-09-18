@@ -9,6 +9,17 @@ val darkiCloudBaseUrl = providers.gradleProperty("darkiCloudBaseUrl")
     .orElse("https://cloud.example.invalid")
     .get()
 
+val releaseKeystorePath = providers.environmentVariable("DARKI_KEYSTORE_FILE").orNull
+val releaseKeystorePassword = providers.environmentVariable("DARKI_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("DARKI_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("DARKI_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.darki.cloud"
     compileSdk = 36
@@ -35,12 +46,26 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"http://10.0.2.2:8080\"")
         }
         release {
             buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"$darkiCloudBaseUrl\"")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
