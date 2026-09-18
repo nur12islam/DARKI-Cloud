@@ -58,8 +58,6 @@ class DarkiCloudApi(
     private suspend fun delete(path: String, token: String, query: Map<String, String>): JSONObject = withContext(Dispatchers.IO) { val urlBuilder = baseUrl.newBuilder().addPathSegments(path.removePrefix("/")); query.forEach { (key, value) -> urlBuilder.addQueryParameter(key, value) }; execute(Request.Builder().url(urlBuilder.build()).delete().bearer(token).build()) }
     private fun execute(request: Request): JSONObject { client.newCall(request).execute().use { response -> val text = response.body?.string().orEmpty(); if (!response.isSuccessful) throw DarkiCloudApiException(response.code, text); return if (text.isBlank()) JSONObject() else JSONObject(text) } }
     private fun Request.Builder.bearer(token: String): Request.Builder = header("Authorization", "Bearer $token")
-}
-
 
     companion object { private const val DEFAULT_BUFFER_SIZE = 8192 }
 }
