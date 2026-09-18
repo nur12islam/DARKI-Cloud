@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -54,10 +55,46 @@ private fun PhotosScreen(photos: List<FileEntity>, token: String?, api: DarkiClo
                 Column(Modifier.fillMaxSize().padding(top = 100.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Image, null, tint = Color(0xFF4D5B5E), modifier = Modifier.size(56.dp)); Spacer(Modifier.height(12.dp)); Text("No photos yet", color = Color(0xFF858585))
                 }
-            } else LazyVerticalGrid(columns = GridCells.Fixed(3), contentPadding = PaddingValues(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { items(photos, key = { it.id }) { file -> PhotoTile(file, token, api) } }
+            } else {
+                val groups = photos.groupBy { photoDateLabel(it.modifiedAt ?: it.createdAt) }
+                LazyColumn(
+                    contentPadding = PaddingValues(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    groups.forEach { (label, group) ->
+                        item {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                            )
+                        }
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                group.chunked(3).forEach { row ->
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        row.forEach { file ->
+                                            Box(Modifier.weight(1f)) {
+                                                PhotoTile(file, token, api)
+                                            }
+                                        }
+                                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun photoDateLabel(timestamp: Long?): String = timestamp?.let { java.text.SimpleDateFormat("MMMM d, yyyy", java.util.Locale.US).format(java.util.Date(it)) } ?: "Unknown date"
 
 @Composable
 private fun PhotoTile(file: FileEntity, token: String?, api: DarkiCloudApi) {
