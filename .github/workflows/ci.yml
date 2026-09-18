@@ -4,6 +4,13 @@ on:
   push:
     branches: [main, 'fix/**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Build and upload the release APK"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -50,3 +57,14 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug --stacktrace --no-daemon
+      - name: Build release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        working-directory: android
+        run: gradle assembleRelease --stacktrace --no-daemon
+      - name: Upload release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        uses: actions/upload-artifact@v4
+        with:
+          name: darki-cloud-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
