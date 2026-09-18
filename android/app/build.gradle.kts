@@ -5,6 +5,10 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val darkiCloudBaseUrl = providers.gradleProperty("darkiCloudBaseUrl")
+    .orElse("https://cloud.example.invalid")
+    .get()
+
 android {
     namespace = "com.darki.cloud"
     compileSdk = 36
@@ -36,7 +40,7 @@ android {
             buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"http://10.0.2.2:8080\"")
         }
         release {
-            buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"https://cloud.example.invalid\"")
+            buildConfigField("String", "DARKI_CLOUD_BASE_URL", "\"$darkiCloudBaseUrl\"")
         }
     }
 }
