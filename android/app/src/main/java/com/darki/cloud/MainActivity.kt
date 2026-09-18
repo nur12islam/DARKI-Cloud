@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(authCode) { if (authCode != null) vm.completeTelegramLogin(authCode) }
     MaterialTheme { Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
         val folders by vm.folders.collectAsState(initial = emptyList()); val allFolders by vm.allFolders.collectAsState(initial = emptyList()); val files by vm.files.collectAsState(initial = emptyList()); val deleted by vm.deletedFiles.collectAsState(initial = emptyList()); val transfers by vm.transfers.collectAsState(initial = emptyList()); val refreshing by vm.isRefreshing.collectAsState(initial = false); val uploading by vm.isUploading.collectAsState(initial = false); val error by vm.error.collectAsState(initial = null); val authenticated by vm.isAuthenticated.collectAsState(initial = false); val stack by vm.folderStack.collectAsState(initial = emptyList()); val previewId by vm.previewFileId.collectAsState(initial = null); val previewMime by vm.previewMimeType.collectAsState(initial = null); val previewName by vm.previewName.collectAsState(initial = null); val token = vm.previewToken(); val context = LocalContext.current
-        var createFolder by remember { mutableStateOf(false) }; var management by remember { mutableStateOf<ManagementTarget?>(null) }; var rename by remember { mutableStateOf<ManagementTarget?>(null) }; var move by remember { mutableStateOf<ManagementTarget?>(null) }; var delete by remember { mutableStateOf<FileEntity?>(null) }; var restore by remember { mutableStateOf<FileEntity?>(null) }; var trash by remember { mutableStateOf(false) }; var showTransfers by remember { mutableStateOf(false) }
+        var createFolder by remember { mutableStateOf(false) }; var management by remember { mutableStateOf<ManagementTarget?>(null) }; var rename by remember { mutableStateOf<ManagementTarget?>(null) }; var move by remember { mutableStateOf<ManagementTarget?>(null) }; var delete by remember { mutableStateOf<FileEntity?>(null) }; var restore by remember { mutableStateOf<FileEntity?>(null) }; var trash by remember { mutableStateOf(false) }; var emptyTrash by remember { mutableStateOf(false) }; var permanentDelete by remember { mutableStateOf<FileEntity?>(null) }; var showTransfers by remember { mutableStateOf(false) }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let { uri -> vm.uploadFile(uri, context.contentResolver) } }
         val searchLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult -> if (result.resultCode == android.app.Activity.RESULT_OK) { val data = result.data; data?.getStringExtra("folder_id")?.let(vm::openFolderById); data?.getStringExtra("file_id")?.let(vm::previewFileById) } }
         val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> if (uri != null && management is ManagementTarget.FileTarget) { val file = (management as ManagementTarget.FileTarget).file; vm.enqueueDownload(file, uri, context.contentResolver); management = null } }
@@ -78,10 +78,12 @@ class MainActivity : ComponentActivity() {
         if (move != null) { val target = move!!; val currentParentId = when (target) { is ManagementTarget.FolderTarget -> target.folder.id; is ManagementTarget.FileTarget -> target.file.folderId }; MoveDialog(if (target is ManagementTarget.FolderTarget) "Move folder" else "Move file", allFolders, currentParentId, { move = null }) { destination -> move = null; when (target) { is ManagementTarget.FolderTarget -> vm.moveFolder(target.folder, destination); is ManagementTarget.FileTarget -> vm.moveFile(target.file, destination) } } }
         delete?.let { file -> DeleteDialog(file, { delete = null }) { delete = null; vm.deleteFile(file) } }
         restore?.let { file -> RestoreDialog(file, { restore = null }) { restore = null; vm.restoreFile(file) } }
+        permanentDelete?.let { file -> PermanentDeleteDialog(file, { permanentDelete = null }) { permanentDelete = null; vm.permanentlyDeleteFile(file) } }
+        if (emptyTrash) ConfirmEmptyTrashDialog({ emptyTrash = false }) { emptyTrash = false; vm.emptyTrash() }
         if (management != null) { val target = management!!; ManagementMenu(target, onDismiss = { management = null }, onRename = { management = null; rename = target }, onMove = { management = null; move = target }, onDelete = { management = null; if (target is ManagementTarget.FileTarget) delete = target.file }, onRestore = { management = null; if (target is ManagementTarget.FileTarget) restore = target.file }, onDownload = { if (target is ManagementTarget.FileTarget) { management = null; savePicker.launch(target.file.name) } }) }
         Box(Modifier.fillMaxSize()) { Column(Modifier.fillMaxSize()) {
             DriveTopBar(refreshing, authenticated, stack.isNotEmpty() && !trash, vm::navigateBack, vm::refreshRoot, vm::logout, onLogin, onTrash = { trash = true }, showTrash = authenticated && !trash, transferCount = transfers.size, onTransfers = { showTransfers = true }, onSearch = { searchLauncher.launch(Intent(context, SearchActivity::class.java)) }, onPhotos = { context.startActivity(Intent(context, PhotosActivity::class.java)) })
-            if (authenticated) { if (trash) TrashContent(deleted, management = { management = ManagementTarget.FileTarget(it) }, onRestore = { restore = it }, onBack = { trash = false }) else DriveContent(folders, files, error, token, vm::openFolder, vm::previewFile) { management = it } } else LoginContent(onLogin)
+            if (authenticated) { if (trash) TrashContent(deleted, management = { management = ManagementTarget.FileTarget(it) }, onRestore = { restore = it }, onPermanentDelete = { permanentDelete = it }, onEmptyTrash = { emptyTrash = true }, onBack = { trash = false }) else DriveContent(folders, files, error, token, vm::openFolder, vm::previewFile) { management = it } } else LoginContent(onLogin)
         }; if (authenticated && !trash) { FloatingActionButton(onClick = { picker.launch(arrayOf("*/*")) }, Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, "Upload file") }; if (!uploading) FloatingActionButton(onClick = { createFolder = true }, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { Icon(Icons.Default.CreateNewFolder, "New folder") } } }
     } }
 }
@@ -94,6 +96,8 @@ private fun TrashContent(
     files: List<FileEntity>,
     management: (FileEntity) -> Unit,
     onRestore: (FileEntity) -> Unit,
+    onPermanentDelete: (FileEntity) -> Unit,
+    onEmptyTrash: () -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -105,13 +109,16 @@ private fun TrashContent(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = "Trash",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Text("Deleted files", color = Color(0xFF858585))
+                Text("${files.size} deleted file${if (files.size == 1) "" else "s"}", color = Color(0xFF858585))
+            }
+            if (files.isNotEmpty()) {
+                TextButton(onClick = onEmptyTrash) { Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(4.dp)); Text("Empty") }
             }
         }
 
@@ -140,7 +147,8 @@ private fun TrashContent(
                                     isFolder = false,
                                     file = file,
                                     token = null,
-                                    onFileClick = { management(file) }
+                                    onFileClick = { management(file) },
+                                    onManage = { onPermanentDelete(file) }
                                 )
                             }
                         }
@@ -151,6 +159,9 @@ private fun TrashContent(
         }
     }
 }
+
+@Composable private fun PermanentDeleteDialog(file: FileEntity, onDismiss: () -> Unit, onConfirm: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text("Delete permanently?") }, text = { Text("“${file.name}” will be permanently removed from your cloud storage. This cannot be undone.") }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { TextButton(onClick = onConfirm) { Text("Delete forever") } }) }
+@Composable private fun ConfirmEmptyTrashDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text("Empty Trash?") }, text = { Text("All deleted files will be permanently removed. This cannot be undone.") }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }, confirmButton = { TextButton(onClick = onConfirm) { Text("Empty Trash") } }) }
 
 @Composable
 private fun DriveContent(
