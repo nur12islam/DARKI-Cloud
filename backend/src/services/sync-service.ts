@@ -26,6 +26,12 @@ export class SyncService {
     if (BigInt(cursor) < BigInt(device.syncCursor)) throw new ServiceError("cursor cannot move backwards", "INVALID_INPUT", 400);
     const latest = await new SyncChangeRepository(db).latestSequence(userId);
     if (BigInt(cursor) > BigInt(latest)) throw new ServiceError("cursor is ahead of the server change log", "INVALID_INPUT", 400);
-    await devices.updateCursor(deviceId, userId, cursor);
+
+    // Advance atomically so concurrent acknowledgements can never move the cursor backwards.
+    // A concurrent request that already advanced farther simply becomes a no-op.
+    await db.query(
+      "UPDATE devices SET sync_cursor = $1, last_seen_at = now() WHERE id = $2 AND user_id = $3 AND sync_cursor <= $1",
+      [cursor, deviceId, userId],
+    );
   }
 }
