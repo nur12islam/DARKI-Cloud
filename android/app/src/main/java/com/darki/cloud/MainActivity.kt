@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
         if (management != null) { val target = management!!; ManagementMenu(target, onDismiss = { management = null }, onRename = { management = null; rename = target }, onMove = { management = null; move = target }, onDelete = { management = null; if (target is ManagementTarget.FileTarget) delete = target.file }, onRestore = { management = null; if (target is ManagementTarget.FileTarget) restore = target.file }, onDownload = { if (target is ManagementTarget.FileTarget) { management = null; savePicker.launch(target.file.name) } }) }
         Box(Modifier.fillMaxSize()) { Column(Modifier.fillMaxSize()) {
             DriveTopBar(refreshing, authenticated, stack.isNotEmpty() && !trash, vm::navigateBack, vm::refreshRoot, vm::logout, onLogin, onTrash = { trash = true }, showTrash = authenticated && !trash, transferCount = transfers.size, onTransfers = { showTransfers = true }, onSearch = { searchLauncher.launch(Intent(context, SearchActivity::class.java)) }, onPhotos = { context.startActivity(Intent(context, PhotosActivity::class.java)) })
-            if (authenticated) { if (trash) TrashContent(deleted, management = { management = ManagementTarget.FileTarget(it) }, onRestore = { restore = it }, onPermanentDelete = { permanentDelete = it }, onEmptyTrash = { emptyTrash = true }, onBack = { trash = false }) else DriveContent(folders, files, error, token, vm::openFolder, vm::previewFile) { management = it } } else LoginContent(onLogin)
+            if (authenticated) { if (trash) TrashContent(deleted, management = { management = ManagementTarget.FileTarget(it) }, onRestore = { restore = it }, onPermanentDelete = { permanentDelete = it }, onEmptyTrash = { emptyTrash = true }, onBack = { trash = false }) else DriveContent(folders, files, error, token, vm::openFolder, vm::previewFile) { management = it } } else LoginContent(error = error, onLogin = onLogin)
         }; if (authenticated && !trash) { FloatingActionButton(onClick = { picker.launch(arrayOf("*/*")) }, Modifier.align(Alignment.BottomEnd).padding(24.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { if (uploading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.UploadFile, "Upload file") }; if (!uploading) FloatingActionButton(onClick = { createFolder = true }, Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 96.dp), containerColor = Color(0xFF171717), contentColor = Color(0xFFB7F7FF)) { Icon(Icons.Default.CreateNewFolder, "New folder") } } }
     } }
 }
@@ -522,13 +522,22 @@ private fun DriveTopBar(
 }
 
 @Composable
-private fun LoginContent(onLogin: () -> Unit) {
+private fun LoginContent(error: String?, onLogin: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(120.dp))
         Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(72.dp))
         Spacer(Modifier.height(22.dp))
         Text("Your private cloud", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Sign in with Telegram to access your files.", color = Color(0xFF858585), modifier = Modifier.padding(top = 8.dp))
+        error?.let {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = it,
+                color = Color(0xFFFFB4AB),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+        }
         Spacer(Modifier.height(28.dp))
         Button(onClick = onLogin, shape = RoundedCornerShape(16.dp)) {
             Icon(Icons.Default.Login, null)
