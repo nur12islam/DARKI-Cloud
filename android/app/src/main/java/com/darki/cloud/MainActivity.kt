@@ -14,6 +14,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -105,6 +108,7 @@ private fun TrashContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -187,7 +191,7 @@ private fun DriveContent(
         )
         Text(
             text = "Your private cloud storage",
-            color = Color(0xFF858585),
+            color = Color(0xFFB8B8BE),
             modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
         )
 
@@ -283,11 +287,11 @@ private fun EmptyState(
             modifier = Modifier.size(52.dp)
         )
         Spacer(Modifier.height(14.dp))
-        Text(title, color = Color(0xFF9A9A9A), fontWeight = FontWeight.Medium)
+        Text(title, color = Color(0xFFD0D0D5), fontWeight = FontWeight.Medium)
         subtitle?.let {
             Text(
                 text = it,
-                color = Color(0xFF666666),
+                color = Color(0xFF9C9CA3),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp)
             )
@@ -309,8 +313,9 @@ private fun DriveGridItem(
     val mime = file?.mimeType ?: guessMime(file?.name)
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF101010))
+             .clip(RoundedCornerShape(22.dp))
+            .background(Color(0x14FFFFFF))
+            .border(1.dp, Color(0x24FFFFFF), RoundedCornerShape(22.dp))
             .clickable { (onFolderClick ?: onFileClick)?.invoke() }
             .padding(10.dp)
     ) {
@@ -318,8 +323,9 @@ private fun DriveGridItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1.15f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF171717))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0x0FFFFFFF))
+                .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(18.dp))
         ) {
             when {
                 isFolder -> {
@@ -327,7 +333,7 @@ private fun DriveGridItem(
                         imageVector = Icons.Default.Folder,
                         contentDescription = "Folder",
                         tint = Color(0xFFB7F7FF),
-                        modifier = Modifier.align(Alignment.Center).size(48.dp)
+                        modifier = Modifier.align(Alignment.Center).size(34.dp)
                     )
                 }
                 mime?.startsWith("image/") == true && token != null && file != null -> {
@@ -338,7 +344,7 @@ private fun DriveGridItem(
                         imageVector = Icons.Default.PlayCircle,
                         contentDescription = "Video",
                         tint = Color(0xFFB7F7FF),
-                        modifier = Modifier.align(Alignment.Center).size(50.dp)
+                        modifier = Modifier.align(Alignment.Center).size(36.dp)
                     )
                 }
                 else -> {
@@ -346,7 +352,7 @@ private fun DriveGridItem(
                         imageVector = Icons.Default.Description,
                         contentDescription = "File",
                         tint = Color(0xFF9A9A9A),
-                        modifier = Modifier.align(Alignment.Center).size(48.dp)
+                        modifier = Modifier.align(Alignment.Center).size(34.dp)
                     )
                 }
             }
@@ -366,11 +372,11 @@ private fun DriveGridItem(
         }
 
         Spacer(Modifier.height(9.dp))
-        Text(text = name, maxLines = 1, fontWeight = FontWeight.Medium)
+        Text(text = name, maxLines = 1, fontWeight = FontWeight.SemiBold, color = Color(0xFFF5F5F7), style = MaterialTheme.typography.bodyMedium)
         Text(
             text = subtitle,
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF777777),
+            color = Color(0xFFB0B0B5),
             modifier = Modifier.padding(top = 3.dp)
         )
     }
