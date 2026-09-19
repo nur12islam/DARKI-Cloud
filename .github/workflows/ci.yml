@@ -57,10 +57,32 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: gradle assembleDebug --stacktrace --no-daemon
+      - name: Prepare release signing
+        if: github.event_name == 'workflow_dispatch' && inputs.release
+        env:
+          DARKI_KEYSTORE_BASE64: ${{ secrets.DARKI_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$DARKI_KEYSTORE_BASE64"
+          printf '%s' "$DARKI_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/release-key.jks"
+          test -s "$GITHUB_WORKSPACE/release-key.jks"
       - name: Build release APK
         if: github.event_name == 'workflow_dispatch' && inputs.release
         working-directory: android
-        run: gradle assembleRelease --stacktrace --no-daemon
+        env:
+          DARKI_CLOUD_BASE_URL: ${{ secrets.DARKI_CLOUD_BASE_URL }}
+          DARKI_KEYSTORE_FILE: ${{ github.workspace }}/release-key.jks
+          DARKI_KEYSTORE_PASSWORD: ${{ secrets.DARKI_KEYSTORE_PASSWORD }}
+          DARKI_KEY_ALIAS: ${{ secrets.DARKI_KEY_ALIAS }}
+          DARKI_KEY_PASSWORD: ${{ secrets.DARKI_KEY_PASSWORD }}
+        run: |
+          test -n "$DARKI_CLOUD_BASE_URL"
+          test -n "$DARKI_KEYSTORE_PASSWORD"
+          test -n "$DARKI_KEY_ALIAS"
+          test -n "$DARKI_KEY_PASSWORD"
+          gradle assembleRelease --stacktrace --no-daemon -PdarkiCloudBaseUrl="$DARKI_CLOUD_BASE_URL"
+      - name: Remove release keystore
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.release
+        run: rm -f "$GITHUB_WORKSPACE/release-key.jks"
       - name: Upload release APK
         if: github.event_name == 'workflow_dispatch' && inputs.release
         uses: actions/upload-artifact@v4
