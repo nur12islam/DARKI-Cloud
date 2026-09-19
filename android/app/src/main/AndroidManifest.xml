@@ -5,6 +5,8 @@
     <application
         android:allowBackup="true"
         android:label="DARKI Cloud"
+        android:icon="@drawable/ic_darki_cloud"
+        android:roundIcon="@drawable/ic_darki_cloud"
         android:supportsRtl="true"
         android:theme="@style/Theme.DARKICloud">
         <activity android:name=".SearchActivity" android:exported="false" />
