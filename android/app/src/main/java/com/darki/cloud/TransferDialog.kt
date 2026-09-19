@@ -77,11 +77,13 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                     }
                 }
-                if (transfer.status == "failed" && !transfer.lastError.isNullOrBlank()) {
+                if (!transfer.lastError.isNullOrBlank()) {
                     Text(transfer.lastError!!, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            if (transfer.status == "failed") {
+            if (transfer.status == "completed") {
+                Text("Done", style = MaterialTheme.typography.labelMedium)
+            } else if (transfer.status == "failed") {
                 Button(onClick = { onRetry(transfer) }) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Text("Retry", Modifier.padding(start = 6.dp))
