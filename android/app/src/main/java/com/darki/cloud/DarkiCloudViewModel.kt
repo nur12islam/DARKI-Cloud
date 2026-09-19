@@ -68,7 +68,14 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
         val (name, size) = metadata
         val now = System.currentTimeMillis()
         val transfer = TransferEntity(UUID.randomUUID().toString(), "upload", uri.toString(), null, folderId, name, resolver.getType(uri), size, null, "queued", 0, null, now, now)
-        viewModelScope.launch { _error.value = null; runCatching { repository.enqueueTransfer(transfer); TransferScheduler.enqueue(appContext, transfer) }.onFailure { _error.value = it.message ?: "Unable to queue upload" } }
+        viewModelScope.launch {
+            _error.value = null
+            runCatching {
+                ensureDeviceAndSync(token)
+                repository.enqueueTransfer(transfer)
+                TransferScheduler.enqueue(appContext, transfer)
+            }.onFailure { _error.value = it.message ?: "Unable to queue upload" }
+        }
     }
     fun enqueueDownload(file: FileEntity, destination: Uri, resolver: ContentResolver) {
         runCatching { resolver.takePersistableUriPermission(destination, android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
