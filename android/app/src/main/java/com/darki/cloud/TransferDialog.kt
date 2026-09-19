@@ -77,7 +77,7 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
                 )
                 Text(
                     transfer.status.replaceFirstChar { it.uppercase() } +
-                        if (transfer.attempts > 0) " • \${transfer.attempts} attempt\${if (transfer.attempts == 1) "" else "s"}" else "",
+                        if (transfer.attempts > 0) " • ${transfer.attempts} attempt${if (transfer.attempts == 1) "" else "s"}" else "",
                     style = MaterialTheme.typography.labelMedium,
                 )
                 if (transfer.status == "running") {
@@ -87,7 +87,7 @@ private fun TransferRow(transfer: TransferEntity, onRetry: (TransferEntity) -> U
                             progress = { (transfer.progressBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         )
-                        Text("\${formatBytes(transfer.progressBytes)} / \${formatBytes(total)}", style = MaterialTheme.typography.labelSmall)
+                        Text("${formatBytes(transfer.progressBytes)} / ${formatBytes(total)}", style = MaterialTheme.typography.labelSmall)
                     } else {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                     }
