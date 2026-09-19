@@ -23,7 +23,7 @@ interface CloudDao {
     fun observePhotos(): Flow<List<FileEntity>>
     @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY modifiedAt DESC")
     fun observeDeletedFiles(): Flow<List<FileEntity>>
-    @Query("SELECT * FROM transfers WHERE status IN ('queued','failed','running') ORDER BY createdAt ASC")
+    @Query("SELECT * FROM transfers WHERE status IN ('queued','failed','running','completed') ORDER BY updatedAt DESC LIMIT 20")
     fun observePendingTransfers(): Flow<List<TransferEntity>>
     @Query("SELECT * FROM transfers WHERE id = :id LIMIT 1")
     suspend fun findTransferById(id: String): TransferEntity?
