@@ -496,25 +496,106 @@ private fun DriveTopBar(
     onBack: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit, onLogin: () -> Unit,
     onTrash: () -> Unit, showTrash: Boolean, transferCount: Int, onTransfers: () -> Unit, onSearch: () -> Unit, onPhotos: () -> Unit
 ) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (authenticated && canGoBack) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-            Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(12.dp))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (authenticated && canGoBack) {
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+            }
+            Icon(
+                imageVector = Icons.Default.Cloud,
+                contentDescription = null,
+                tint = Color(0xFFB7F7FF),
+                modifier = Modifier.size(30.dp)
+            )
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
-                Text(if (authenticated) "My Drive" else "Private cloud storage", style = MaterialTheme.typography.labelMedium, color = Color(0xFF858585))
+                Text(
+                    if (authenticated) "My Drive" else "Private cloud storage",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF858585)
+                )
             }
             if (authenticated) {
-                IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Search") }
-                IconButton(onClick = onPhotos) { Icon(Icons.Default.Image, "Photos") }
-                AssistChip(onClick = onTransfers, label = { Text(if (transferCount > 0) "Transfers ($transferCount)" else "Transfers") }, leadingIcon = { Icon(Icons.Default.CloudSync, null) })
-                IconButton(onClick = onRefresh, enabled = !refreshing) {
-                    if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Refresh")
+                Box {
+                    IconButton(onClick = onTransfers) {
+                        Icon(Icons.Default.CloudSync, contentDescription = "Transfers")
+                    }
+                    if (transferCount > 0) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = (-2).dp, y = 2.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFB7F7FF),
+                        ) {
+                            Text(
+                                text = transferCount.coerceAtMost(99).toString(),
+                                color = Color(0xFF050505),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
                 }
-                if (showTrash) IconButton(onClick = onTrash) { Icon(Icons.Default.DeleteSweep, "Trash") }
-                IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Log out") }
-            } else IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
+                IconButton(onClick = onRefresh, enabled = !refreshing) {
+                    if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, "Refresh")
+                }
+                IconButton(onClick = onLogout) { Icon(Icons.Default.MoreVert, "More") }
+            } else {
+                IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
+            }
+        }
+
+        if (authenticated) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onTransfers,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) {
+                    Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (transferCount > 0) "Transfers • $transferCount" else "Transfers")
+                }
+                OutlinedButton(
+                    onClick = onSearch,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Search")
+                }
+                OutlinedButton(
+                    onClick = onPhotos,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp)
+                ) {
+                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Photos")
+                }
+                if (showTrash) {
+                    IconButton(onClick = onTrash) {
+                        Icon(Icons.Default.DeleteSweep, "Trash")
+                    }
+                }
+            }
         }
     }
 }
