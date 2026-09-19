@@ -61,6 +61,7 @@ class DarkiCloudViewModel(private val repository: CloudRepository, private val s
     fun emptyTrash() { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to empty trash") { repository.emptyTrash(token, device) } }
     fun restoreFile(file: FileEntity) { val token = sessionStore.token ?: return; val device = sessionStore.deviceId ?: return; action("Unable to restore file") { repository.restoreFile(token, file.id, device); repository.loadFolder(token, file.folderId) } }
     fun uploadFile(uri: Uri, resolver: ContentResolver) {
+        val token = sessionStore.token ?: return
         val folderId = _currentFolderId.value ?: return
         val metadata = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor -> if (!cursor.moveToFirst()) null else { val ni = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); val si = cursor.getColumnIndex(OpenableColumns.SIZE); val name = if (ni >= 0) cursor.getString(ni) else null; val size = if (si >= 0 && !cursor.isNull(si)) cursor.getLong(si) else null; if (name.isNullOrBlank() || size == null || size < 0) null else name to size } }
         if (metadata == null) { _error.value = "Unable to read the selected file"; return }
