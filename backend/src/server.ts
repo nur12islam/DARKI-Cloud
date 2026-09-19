@@ -1,41 +1,52 @@
 import { createServer } from "node:http";
+import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { db, closeDatabase } from "./db/pool.js";
 
+const schemaPath = fileURLToPath(
+  new URL("../../database/schema.sql", import.meta.url),
+);
+const migrationsPath = fileURLToPath(
+  new URL("../../database/migrations", import.meta.url),
+);
+
 async function ensureRuntimeSchema(): Promise<void> {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS telegram_login_attempts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      state_hash CHAR(64) NOT NULL UNIQUE,
-      code_verifier TEXT NOT NULL,
-      nonce_hash CHAR(64) NOT NULL,
-      exchange_code_hash CHAR(64) UNIQUE,
-      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-      expires_at TIMESTAMPTZ NOT NULL,
-      used_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT telegram_login_attempts_expiry_valid CHECK (expires_at > created_at)
-    )
-  `);
+  await db.query("BEGIN");
 
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS telegram_login_attempts_expiry_idx
-      ON telegram_login_attempts (expires_at)
-  `);
+  try {
+    const baseSchema = await db.query<{ exists: boolean }>(
+      "SELECT to_regclass('public.users') IS NOT NULL AS exists",
+    );
 
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS telegram_login_attempts_exchange_idx
-      ON telegram_login_attempts (exchange_code_hash)
-      WHERE exchange_code_hash IS NOT NULL AND used_at IS NULL
-  `);
+    if (!baseSchema.rows[0]?.exists) {
+      const schema = await readFile(schemaPath, "utf8");
+      await db.query(schema);
+      console.log("Applied base database schema.");
+    } else {
+      console.log("Base database schema already exists.");
+    }
 
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS telegram_login_attempts_cleanup_idx
-      ON telegram_login_attempts (expires_at, used_at)
-  `);
+    const migrationFiles = (await readdir(migrationsPath))
+      .filter((name) => /^\d+_.+\.sql$/.test(name))
+      .sort();
 
-  console.log("Runtime database schema check completed.");
+    for (const filename of migrationFiles) {
+      const migration = await readFile(
+        `${migrationsPath}/${filename}`,
+        "utf8",
+      );
+      await db.query(migration);
+      console.log(`Ensured migration: ${filename}`);
+    }
+
+    await db.query("COMMIT");
+    console.log("Runtime database schema check completed.");
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
 }
 
 async function main() {
