@@ -7,6 +7,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.workDataOf
 import com.darki.cloud.data.local.TransferEntity
 import java.util.concurrent.TimeUnit
@@ -16,6 +17,7 @@ object TransferScheduler {
         .setInputData(workDataOf(TransferWorker.KEY_TRANSFER_ID to transfer.id))
         .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
         .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+        .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
         .build()
 
     fun enqueue(context: Context, transfer: TransferEntity) {
