@@ -25,6 +25,23 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         val token = store.token ?: return@withContext Result.failure()
         val api = DarkiCloudApi(BuildConfig.DARKI_CLOUD_BASE_URL, OkHttpClient())
         val repository = CloudRepository(api, dao)
+        val deviceId = store.deviceId ?: runCatching {
+            repository.registerDevice(
+                token,
+                "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                "Android ${android.os.Build.VERSION.RELEASE}",
+            ).also { store.deviceId = it.id }.id
+        }.getOrElse {
+            dao.upsertTransfer(
+                transfer.copy(
+                    status = "failed",
+                    attempts = transfer.attempts + 1,
+                    lastError = "Unable to register this device: ${it.message ?: "unknown error"}",
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+            return@withContext Result.failure()
+        }
         dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
         val progress: (Long) -> Unit = { bytes -> dao.updateTransferProgress(id, bytes, System.currentTimeMillis()) }
         var temporaryDownload: File? = null
@@ -36,7 +53,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                     val name = transfer.name ?: error("Missing upload name")
                     val size = transfer.sizeBytes ?: error("Missing upload size")
                     val input = applicationContext.contentResolver.openInputStream(uri) ?: error("Unable to open upload")
-                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, store.deviceId ?: error("Missing device"), transfer.id, it, progress) }
+                    input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, deviceId, transfer.id, it, progress) }
                 }
                 "download" -> {
                     val fileId = transfer.fileId ?: error("Missing download file")
