@@ -42,7 +42,8 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
             )
             return@withContext Result.failure()
         }
-        dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
+        dao.upsertTransfer(transfer.copy(status = "running", attempts = transfer.attempts + 1, progressBytes = 0L, lastError = null, updatedAt = System.currentTimeMillis()))
+        val runningTransfer = dao.findTransferById(id) ?: transfer.copy(status = "running", attempts = transfer.attempts + 1)
         val progress: (Long) -> Unit = { bytes -> dao.updateTransferProgress(id, bytes, System.currentTimeMillis()) }
         var temporaryDownload: File? = null
         try {
@@ -54,6 +55,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                     val size = transfer.sizeBytes ?: error("Missing upload size")
                     val input = applicationContext.contentResolver.openInputStream(uri) ?: error("Unable to open upload")
                     input.use { repository.uploadFile(token, folderId, name, transfer.mimeType, size, deviceId, transfer.id, it, progress) }
+                    repository.loadFolder(token, folderId)
                 }
                 "download" -> {
                     val fileId = transfer.fileId ?: error("Missing download file")
@@ -66,12 +68,14 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                 }
                 else -> error("Unknown transfer type")
             }
-            dao.upsertTransfer(transfer.copy(status = "completed", attempts = transfer.attempts + 1, progressBytes = transfer.sizeBytes ?: transfer.progressBytes, lastError = null, updatedAt = System.currentTimeMillis()))
+            val latest = dao.findTransferById(id) ?: runningTransfer
+            dao.upsertTransfer(latest.copy(status = "completed", progressBytes = latest.sizeBytes ?: latest.progressBytes, lastError = null, updatedAt = System.currentTimeMillis()))
             Result.success()
         } catch (error: Exception) {
-            val attempts = transfer.attempts + 1
+            val latest = dao.findTransferById(id) ?: runningTransfer
+            val attempts = latest.attempts
             val terminal = attempts >= MAX_ATTEMPTS
-            dao.upsertTransfer(transfer.copy(status = if (terminal) "failed" else "queued", attempts = attempts, lastError = error.message, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
+            dao.upsertTransfer(latest.copy(status = if (terminal) "failed" else "queued", lastError = error.message, progressBytes = 0L, updatedAt = System.currentTimeMillis()))
             if (terminal) Result.failure() else Result.retry()
         } finally {
             temporaryDownload?.delete()
