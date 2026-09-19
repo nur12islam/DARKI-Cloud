@@ -73,11 +73,13 @@ jobs:
           DARKI_KEYSTORE_PASSWORD: ${{ secrets.DARKI_KEYSTORE_PASSWORD }}
           DARKI_KEY_ALIAS: ${{ secrets.DARKI_KEY_ALIAS }}
           DARKI_KEY_PASSWORD: ${{ secrets.DARKI_KEY_PASSWORD }}
+          DARKI_CLOUD_BASE_URL: ${{ secrets.DARKI_CLOUD_BASE_URL }}
         run: |
           test -n "$DARKI_KEYSTORE_PASSWORD"
           test -n "$DARKI_KEY_ALIAS"
           test -n "$DARKI_KEY_PASSWORD"
-          gradle assembleRelease --stacktrace --no-daemon
+          test -n "$DARKI_CLOUD_BASE_URL"
+          gradle assembleRelease --stacktrace --no-daemon -PdarkiCloudBaseUrl="$DARKI_CLOUD_BASE_URL"
       - name: Remove release keystore
         if: always() && github.event_name == 'workflow_dispatch' && inputs.release
         run: rm -f "$GITHUB_WORKSPACE/release-key.jks"
