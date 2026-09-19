@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: darki-cloud-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm --prefix backend install && npm --prefix backend run build
+    preDeployCommand: npm --prefix backend run db:migrate
+    startCommand: npm --prefix backend start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: darki-cloud-db
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_STORAGE_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CLIENT_ID
+        sync: false
+      - key: TELEGRAM_CLIENT_SECRET
+        sync: false
+      - key: TELEGRAM_OIDC_REDIRECT_URI
+        sync: false
+      - key: TELEGRAM_APP_REDIRECT_URI
+        value: darkicloud://auth
+
+databases:
+  - name: darki-cloud-db
+    plan: free
+    region: singapore
+    postgresMajorVersion: "18"
