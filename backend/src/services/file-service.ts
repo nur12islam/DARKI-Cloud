@@ -88,7 +88,14 @@ export class FileService {
         idempotencyKey: operationId,
       });
     } catch (error) {
-      if (error instanceof StorageProviderError) throw mapStorageError(error);
+      if (error instanceof StorageProviderError) {
+        console.error("Storage provider upload failed", {
+          code: error.code,
+          message: error.message,
+          cause: error.cause instanceof Error ? error.cause.message : error.cause,
+        });
+        throw mapStorageError(error);
+      }
       throw error;
     }
 
