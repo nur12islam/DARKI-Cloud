@@ -3,6 +3,8 @@ package com.darki.cloud
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.content.ActivityNotFoundException
+import androidx.core.content.FileProvider
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
@@ -427,13 +429,157 @@ private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: Strin
         onDismissRequest = onDismiss,
         title = { Text(text = name, maxLines = 1) },
         text = {
-            if (token == null) Text("Your session has expired.")
-            else if (mimeType.startsWith("video/")) VideoPreview(api, token, fileId)
-            else if (mimeType.startsWith("image/")) SafeImagePreview(api, token, fileId)
-            else Text("Preview is not available for this file type.")
+            when {
+                token == null -> Text("Your session has expired.")
+                mimeType.startsWith("video/") -> VideoPreview(api, token, fileId)
+                mimeType.startsWith("image/") -> SafeImagePreview(api, token, fileId)
+                mimeType == "application/pdf" -> PdfPreview(api, token, fileId)
+                isDocumentMime(mimeType) -> ExternalDocumentPreview(api, token, fileId, name)
+                else -> Text("Preview is not available for this file type.")
+            }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
+}
+
+private fun isDocumentMime(mimeType: String): Boolean = mimeType in setOf(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "text/plain",
+)
+
+@Composable
+private fun ExternalDocumentPreview(api: DarkiCloudApi, token: String, fileId: String, name: String) {
+    val context = LocalContext.current
+    var opening by remember(fileId, token) { mutableStateOf(false) }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp)) {
+        Icon(Icons.Default.Description, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(56.dp))
+        Spacer(Modifier.height(14.dp))
+        Text("Open this document with an app installed on your device.", color = Color(0xFFD5D5DA))
+        Spacer(Modifier.height(16.dp))
+        Button(enabled = !opening, onClick = {
+            opening = true
+            LaunchedExternalOpen(context, api, token, fileId, name) { opening = false }
+        }) { Text(if (opening) "Preparing…" else "Open with another app") }
+    }
+}
+
+@Composable
+private fun LaunchedExternalOpen(
+    context: android.content.Context,
+    api: DarkiCloudApi,
+    token: String,
+    fileId: String,
+    name: String,
+    onDone: () -> Unit,
+) {
+    LaunchedEffect(fileId) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val out = File(dir, safeName)
+                OkHttpClient().newCall(
+                    Request.Builder().url(api.fileContentUrl(fileId))
+                        .header("Authorization", "Bearer $token").build()
+                ).execute().use { response ->
+                    if (!response.isSuccessful) error("Download failed")
+                    response.body?.byteStream()?.use { input -> out.outputStream().use { output -> input.copyTo(output) } }
+                        ?: error("Empty response")
+                }
+                val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", out)
+                val mime = guessMime(name) ?: "application/octet-stream"
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                try { context.startActivity(intent) } catch (_: ActivityNotFoundException) { }
+            }
+        }
+        onDone()
+    }
+}
+
+@Composable
+private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String) {
+    val context = LocalContext.current
+    var pdfFile by remember(fileId, token) { mutableStateOf<File?>(null) }
+    var error by remember(fileId, token) { mutableStateOf<String?>(null) }
+    var page by remember(fileId, token) { mutableIntStateOf(0) }
+    LaunchedEffect(fileId, token) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val file = File.createTempFile("darki-pdf-", ".pdf", context.cacheDir)
+                OkHttpClient().newCall(
+                    Request.Builder().url(api.fileContentUrl(fileId))
+                        .header("Authorization", "Bearer $token").build()
+                ).execute().use { response ->
+                    if (!response.isSuccessful) error("PDF download failed")
+                    response.body?.byteStream()?.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+                        ?: error("Empty PDF response")
+                }
+                pdfFile = file
+            }.onFailure { error = it.message ?: "Unable to open PDF" }
+        }
+    }
+    val file = pdfFile
+    if (file == null) {
+        Box(Modifier.fillMaxWidth().height(360.dp), contentAlignment = Alignment.Center) {
+            if (error == null) CircularProgressIndicator() else Text(error!!)
+        }
+    } else {
+        PdfPage(file, page)
+        val renderer = remember(file) {
+            runCatching {
+                android.graphics.pdf.PdfRenderer(
+                    android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                )
+            }.getOrNull()
+        }
+        val count = renderer?.pageCount ?: 0
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(enabled = page > 0, onClick = { page-- }) { Text("Previous") }
+            Text(if (count > 0) (page + 1).toString() + " / " + count else "PDF")
+            TextButton(enabled = page + 1 < count, onClick = { page++ }) { Text("Next") }
+        }
+        DisposableEffect(renderer) { onDispose { renderer?.close() } }
+    }
+}
+
+@Composable
+private fun PdfPage(file: File, pageIndex: Int) {
+    var bitmap by remember(file, pageIndex) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(file, pageIndex) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val descriptor = android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = android.graphics.pdf.PdfRenderer(descriptor)
+                renderer.openPage(pageIndex).use { page ->
+                    val width = 1200
+                    val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
+                    val image = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                    image.eraseColor(android.graphics.Color.WHITE)
+                    page.render(image, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    bitmap = image
+                }
+                renderer.close()
+                descriptor.close()
+            }
+        }
+    }
+    bitmap?.let {
+        Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit)
+    } ?: Box(Modifier.fillMaxWidth().height(420.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
 }
 
 @Composable
