@@ -49,7 +49,7 @@ class TransferWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                 }
                 else -> error("Unknown transfer type")
             }
-            dao.deleteTransfer(id)
+            dao.upsertTransfer(transfer.copy(status = "completed", attempts = transfer.attempts + 1, progressBytes = transfer.sizeBytes ?: transfer.progressBytes, lastError = null, updatedAt = System.currentTimeMillis()))
             Result.success()
         } catch (error: Exception) {
             val attempts = transfer.attempts + 1
