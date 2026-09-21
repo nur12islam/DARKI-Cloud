@@ -184,7 +184,7 @@ private fun DriveContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 12.dp)
     ) {
         Text(
             text = "My Drive",
@@ -194,76 +194,46 @@ private fun DriveContent(
         Text(
             text = "Your private cloud storage",
             color = Color(0xFFB8B8BE),
-            modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
         error?.let {
-            Text(
-                text = it,
-                color = Color(0xFFFFB4AB),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
+            Text(it, color = Color(0xFFFFB4AB), modifier = Modifier.padding(bottom = 8.dp))
         }
 
         if (folders.isEmpty() && files.isEmpty() && error == null) {
-            EmptyState(
-                icon = Icons.Default.Cloud,
-                title = "Your drive is empty",
-                subtitle = "Create a folder or upload a file to get started"
-            )
+            EmptyState(icon = Icons.Default.Cloud, title = "Your drive is empty", subtitle = "Create a folder or upload a file to get started")
         } else {
-            Column(
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 120.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .weight(1f),
+                contentPadding = PaddingValues(bottom = 120.dp, top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                folders.chunked(2).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        row.forEach { folder ->
-                            Box(Modifier.weight(1f)) {
-                                DriveGridItem(
-                                    name = folder.name,
-                                    subtitle = "Folder",
-                                    isFolder = true,
-                                    file = null,
-                                    token = token,
-                                    onFolderClick = { onFolderClick(folder) },
-                                    onManage = {
-                                        onManage(ManagementTarget.FolderTarget(folder))
-                                    }
-                                )
-                            }
-                        }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
-                    }
+                items(folders, key = { "folder_" + it.id }) { folder ->
+                    DriveGridItem(
+                        name = folder.name,
+                        subtitle = "Folder",
+                        isFolder = true,
+                        file = null,
+                        token = token,
+                        onFolderClick = { onFolderClick(folder) },
+                        onManage = { onManage(ManagementTarget.FolderTarget(folder)) }
+                    )
                 }
-
-                files.chunked(2).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        row.forEach { file ->
-                            Box(Modifier.weight(1f)) {
-                                DriveGridItem(
-                                    name = file.name,
-                                    subtitle = formatSize(file.sizeBytes),
-                                    isFolder = false,
-                                    file = file,
-                                    token = token,
-                                    onFileClick = { onFileClick(file) },
-                                    onManage = {
-                                        onManage(ManagementTarget.FileTarget(file))
-                                    }
-                                )
-                            }
-                        }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
-                    }
+                items(files, key = { "file_" + it.id }) { file ->
+                    DriveGridItem(
+                        name = file.name,
+                        subtitle = formatSize(file.sizeBytes),
+                        isFolder = false,
+                        file = file,
+                        token = token,
+                        onFileClick = { onFileClick(file) },
+                        onManage = { onManage(ManagementTarget.FileTarget(file)) }
+                    )
                 }
             }
         }
