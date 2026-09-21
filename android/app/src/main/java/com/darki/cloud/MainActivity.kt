@@ -785,7 +785,7 @@ private fun DriveTopBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (authenticated && canGoBack) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back", tint = Color.White) }
             }
             Icon(
                 imageVector = Icons.Default.Cloud,
@@ -795,17 +795,17 @@ private fun DriveTopBar(
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("DARKI Cloud", fontWeight = FontWeight.SemiBold)
+                Text("DARKI Cloud", color = Color.White, fontWeight = FontWeight.SemiBold)
                 Text(
                     if (authenticated) "My Drive" else "Private cloud storage",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF858585)
+                    color = Color(0xFFD5D5DA)
                 )
             }
             if (authenticated) {
                 Box {
                     IconButton(onClick = onTransfers) {
-                        Icon(Icons.Default.CloudSync, contentDescription = "Transfers")
+                        Icon(Icons.Default.CloudSync, contentDescription = "Transfers", tint = Color.White)
                     }
                     if (transferCount > 0) {
                         Surface(
@@ -827,11 +827,11 @@ private fun DriveTopBar(
                 }
                 IconButton(onClick = onRefresh, enabled = !refreshing) {
                     if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, "Refresh")
+                    else Icon(Icons.Default.Refresh, "Refresh", tint = Color.White)
                 }
-                IconButton(onClick = onLogout) { Icon(Icons.Default.MoreVert, "More") }
+                IconButton(onClick = onLogout) { Icon(Icons.Default.MoreVert, "More", tint = Color.White) }
             } else {
-                IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in") }
+                IconButton(onClick = onLogin) { Icon(Icons.Default.Login, "Sign in", tint = Color.White) }
             }
         }
 
@@ -847,31 +847,31 @@ private fun DriveTopBar(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 10.dp)
                 ) {
-                    Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (transferCount > 0) "Transfers • $transferCount" else "Transfers")
+                    Text(if (transferCount > 0) "Transfers • $transferCount" else "Transfers", color = Color.White)
                 }
                 OutlinedButton(
                     onClick = onSearch,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 10.dp)
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Search")
+                    Text("Search", color = Color.White)
                 }
                 OutlinedButton(
                     onClick = onPhotos,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 10.dp)
                 ) {
-                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Photos")
+                    Text("Photos", color = Color.White)
                 }
                 if (showTrash) {
                     IconButton(onClick = onTrash) {
-                        Icon(Icons.Default.DeleteSweep, "Trash")
+                        Icon(Icons.Default.DeleteSweep, "Trash", tint = Color.White)
                     }
                 }
             }
