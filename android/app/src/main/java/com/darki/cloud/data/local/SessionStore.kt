@@ -43,7 +43,22 @@ class SessionStore(context: Context) {
             if (value == null) remove(KEY_DEVICE_ID) else putString(KEY_DEVICE_ID, value)
         }.apply()
 
-    var cursor: String
+    var backupTreeUri: String?
+    get() = preferences.getString(KEY_BACKUP_TREE_URI, null)
+    set(value) = preferences.edit().apply { if (value == null) remove(KEY_BACKUP_TREE_URI) else putString(KEY_BACKUP_TREE_URI, value) }.apply()
+
+var backupEnabled: Boolean
+    get() = preferences.getBoolean(KEY_BACKUP_ENABLED, false)
+    set(value) = preferences.edit().putBoolean(KEY_BACKUP_ENABLED, value).apply()
+
+var backupFolderId: String?
+    get() = preferences.getString(KEY_BACKUP_FOLDER_ID, null)
+    set(value) = preferences.edit().apply { if (value == null) remove(KEY_BACKUP_FOLDER_ID) else putString(KEY_BACKUP_FOLDER_ID, value) }.apply()
+
+fun getBackupFingerprint(uri: String): String? = preferences.getString(KEY_BACKUP_PREFIX + uri.hashCode(), null)
+fun setBackupFingerprint(uri: String, fingerprint: String) = preferences.edit().putString(KEY_BACKUP_PREFIX + uri.hashCode(), fingerprint).apply()
+
+var cursor: String
         get() = preferences.getString(KEY_CURSOR, "0") ?: "0"
         set(value) = preferences.edit().putString(KEY_CURSOR, value).apply()
 
@@ -103,5 +118,9 @@ class SessionStore(context: Context) {
         const val KEY_ROOT_FOLDER_ID = "root_folder_id"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_CURSOR = "sync_cursor"
+        const val KEY_BACKUP_TREE_URI = "backup_tree_uri"
+        const val KEY_BACKUP_ENABLED = "backup_enabled"
+        const val KEY_BACKUP_FOLDER_ID = "backup_folder_id"
+        const val KEY_BACKUP_PREFIX = "backup_fingerprint_"
     }
 }
