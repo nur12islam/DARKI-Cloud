@@ -456,6 +456,13 @@ private fun isDocumentMime(mimeType: String): Boolean = mimeType in setOf(
 private fun ExternalDocumentPreview(api: DarkiCloudApi, token: String, fileId: String, name: String) {
     val context = LocalContext.current
     var opening by remember(fileId, token) { mutableStateOf(false) }
+    var openRequested by remember(fileId, token) { mutableStateOf(false) }
+    if (openRequested) {
+        LaunchedExternalOpen(context, api, token, fileId, name) {
+            opening = false
+            openRequested = false
+        }
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp)) {
         Icon(Icons.Default.Description, null, tint = Color(0xFFB7F7FF), modifier = Modifier.size(56.dp))
         Spacer(Modifier.height(14.dp))
@@ -463,7 +470,7 @@ private fun ExternalDocumentPreview(api: DarkiCloudApi, token: String, fileId: S
         Spacer(Modifier.height(16.dp))
         Button(enabled = !opening, onClick = {
             opening = true
-            LaunchedExternalOpen(context, api, token, fileId, name) { opening = false }
+            openRequested = true
         }) { Text(if (opening) "Preparing…" else "Open with another app") }
     }
 }
