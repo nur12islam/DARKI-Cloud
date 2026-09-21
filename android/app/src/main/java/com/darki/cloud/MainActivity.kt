@@ -25,11 +25,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -395,6 +400,10 @@ private fun AuthenticatedThumbnail(fileId: String, token: String) {
 
 @Composable
 private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: String, mimeType: String, name: String, onDismiss: () -> Unit) {
+    if (mimeType == "application/pdf" && token != null) {
+        PdfFullscreenDialog(api, token, fileId, name, onDismiss)
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = name, maxLines = 1) },
@@ -410,6 +419,21 @@ private fun MediaPreviewDialog(api: DarkiCloudApi, token: String?, fileId: Strin
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
+}
+
+@Composable
+private fun PdfFullscreenDialog(api: DarkiCloudApi, token: String, fileId: String, name: String, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") }
+                    Text(name, maxLines = 1, modifier = Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+                PdfPreview(api, token, fileId, fullscreen = true)
+            }
+        }
+    }
 }
 
 private fun isDocumentMime(mimeType: String): Boolean = mimeType in setOf(
@@ -482,7 +506,7 @@ private fun LaunchedExternalOpen(
 }
 
 @Composable
-private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String) {
+private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String, fullscreen: Boolean = false) {
     val context = LocalContext.current
     var pdfFile by remember(fileId, token) { mutableStateOf<File?>(null) }
     var error by remember(fileId, token) { mutableStateOf<String?>(null) }
@@ -509,7 +533,7 @@ private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String) {
             if (error == null) CircularProgressIndicator() else Text(error!!)
         }
     } else {
-        PdfPage(file, page)
+        PdfPage(file, page, fullscreen)
         val renderer = remember(file) {
             runCatching {
                 android.graphics.pdf.PdfRenderer(
@@ -532,7 +556,7 @@ private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String) {
 }
 
 @Composable
-private fun PdfPage(file: File, pageIndex: Int) {
+private fun PdfPage(file: File, pageIndex: Int, fullscreen: Boolean = false) {
     var bitmap by remember(file, pageIndex) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(file, pageIndex) {
         withContext(Dispatchers.IO) {
@@ -552,9 +576,28 @@ private fun PdfPage(file: File, pageIndex: Int) {
             }
         }
     }
+    var scale by remember(file, pageIndex) { mutableFloatStateOf(1f) }
+    var offsetX by remember(file, pageIndex) { mutableFloatStateOf(0f) }
+    var offsetY by remember(file, pageIndex) { mutableFloatStateOf(0f) }
     bitmap?.let {
-        Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().height(420.dp), contentScale = ContentScale.Fit)
-    } ?: Box(Modifier.fillMaxWidth().height(420.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.height(420.dp))
+                .pointerInput(file, pageIndex) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 4f)
+                        offsetX += pan.x
+                        offsetY += pan.y
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                it.asImageBitmap(), null,
+                Modifier.fillMaxWidth().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY),
+                contentScale = ContentScale.Fit
+            )
+        }
+    } ?: Box(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.height(420.dp)), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
     }
 }
