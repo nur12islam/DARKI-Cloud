@@ -75,11 +75,20 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); pendingAuthCode = extractAuthCode(intent); pendingSharedUris = extractSharedUris(intent); render() }
     private fun render() { setContent { val vm: DarkiCloudViewModel = viewModel(factory = DarkiCloudViewModel.factory(repository, sessionStore, applicationContext)); DarkiCloudApp(vm, api, pendingAuthCode, ::openTelegramLogin, pendingSharedUris) } }
     private fun openTelegramLogin() = startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(api.telegramLoginUrl())))
-    private fun extractSharedUris(intent: Intent?): List<Uri> {\n        if (intent?.action != Intent.ACTION_SEND && intent?.action != Intent.ACTION_SEND_MULTIPLE) return emptyList()\n        val list = mutableListOf<Uri>()\n        intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(list::add)\n        intent?.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.addAll(it) }\n        return list.distinct()\n    }\n    private fun extractAuthCode(intent: Intent?): String? { val uri = intent?.data ?: return null; if (uri.scheme != "darkicloud" || uri.host != "auth") return null; return uri.getQueryParameter("code")?.takeIf { it.isNotBlank() } }
+    private fun extractSharedUris(intent: Intent?): List<Uri> {
+        if (intent?.action != Intent.ACTION_SEND && intent?.action != Intent.ACTION_SEND_MULTIPLE) return emptyList()
+        val list = mutableListOf<Uri>()
+        intent?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(list::add)
+        intent?.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { list.addAll(it) }
+        return list.distinct()
+    }
+    private fun extractAuthCode(intent: Intent?): String? { val uri = intent?.data ?: return null; if (uri.scheme != "darkicloud" || uri.host != "auth") return null; return uri.getQueryParameter("code")?.takeIf { it.isNotBlank() } }
 }
 
 @Composable private fun DarkiCloudApp(vm: DarkiCloudViewModel, api: DarkiCloudApi, authCode: String?, onLogin: () -> Unit, sharedUris: List<Uri>) {
-    LaunchedEffect(authCode) { if (authCode != null) vm.completeTelegramLogin(authCode) }\n    LaunchedEffect(sharedUris) { if (sharedUris.isNotEmpty()) sharedUris.forEach { vm.uploadFile(it, LocalContext.current.contentResolver) } }
+    val context = LocalContext.current
+    LaunchedEffect(authCode) { if (authCode != null) vm.completeTelegramLogin(authCode) }
+    LaunchedEffect(sharedUris) { if (sharedUris.isNotEmpty()) sharedUris.forEach { vm.uploadFile(it, context.contentResolver) } }
     MaterialTheme { Surface(Modifier.fillMaxSize(), color = Color(0xFF050505)) {
         val folders by vm.folders.collectAsState(initial = emptyList()); val allFolders by vm.allFolders.collectAsState(initial = emptyList()); val files by vm.files.collectAsState(initial = emptyList()); val deleted by vm.deletedFiles.collectAsState(initial = emptyList()); val transfers by vm.transfers.collectAsState(initial = emptyList()); val refreshing by vm.isRefreshing.collectAsState(initial = false); val uploading by vm.isUploading.collectAsState(initial = false); val error by vm.error.collectAsState(initial = null); val authenticated by vm.isAuthenticated.collectAsState(initial = false); val stack by vm.folderStack.collectAsState(initial = emptyList()); val previewId by vm.previewFileId.collectAsState(initial = null); val previewMime by vm.previewMimeType.collectAsState(initial = null); val previewName by vm.previewName.collectAsState(initial = null); val token = vm.previewToken(); val context = LocalContext.current
         var createFolder by remember { mutableStateOf(false) }; var showBackupInfo by remember { mutableStateOf(false) }; var management by remember { mutableStateOf<ManagementTarget?>(null) }; var rename by remember { mutableStateOf<ManagementTarget?>(null) }; var move by remember { mutableStateOf<ManagementTarget?>(null) }; var delete by remember { mutableStateOf<FileEntity?>(null) }; var restore by remember { mutableStateOf<FileEntity?>(null) }; var trash by remember { mutableStateOf(false) }; var emptyTrash by remember { mutableStateOf(false) }; var permanentDelete by remember { mutableStateOf<FileEntity?>(null) }; var showTransfers by remember { mutableStateOf(false) }
