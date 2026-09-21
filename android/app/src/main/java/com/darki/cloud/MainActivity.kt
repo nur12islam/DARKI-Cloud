@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -533,8 +535,9 @@ private fun LaunchedExternalOpen(
 private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String, fullscreen: Boolean = false) {
     val context = LocalContext.current
     var pdfFile by remember(fileId, token) { mutableStateOf<File?>(null) }
+    var pageCount by remember(fileId, token) { mutableIntStateOf(0) }
     var error by remember(fileId, token) { mutableStateOf<String?>(null) }
-    var page by remember(fileId, token) { mutableIntStateOf(0) }
+
     LaunchedEffect(fileId, token) {
         withContext(Dispatchers.IO) {
             runCatching {
@@ -544,55 +547,118 @@ private fun PdfPreview(api: DarkiCloudApi, token: String, fileId: String, fullsc
                         .header("Authorization", "Bearer $token").build()
                 ).execute().use { response ->
                     if (!response.isSuccessful) error("PDF download failed")
-                    response.body?.byteStream()?.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
-                        ?: error("Empty PDF response")
+                    response.body?.byteStream()?.use { input ->
+                        file.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                    } ?: error("Empty PDF response")
                 }
+
+                val descriptor = android.os.ParcelFileDescriptor.open(
+                    file, android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                )
+                val renderer = android.graphics.pdf.PdfRenderer(descriptor)
+                pageCount = renderer.pageCount
+                renderer.close()
+                descriptor.close()
                 pdfFile = file
             }.onFailure { error = it.message ?: "Unable to open PDF" }
         }
     }
+
     val file = pdfFile
     if (file == null) {
-        Box(Modifier.fillMaxWidth().height(360.dp), contentAlignment = Alignment.Center) {
-            if (error == null) CircularProgressIndicator() else Text(error!!)
-        }
-    } else {
-        PdfPage(file, page, fullscreen)
-        val renderer = remember(file) {
-            runCatching {
-                android.graphics.pdf.PdfRenderer(
-                    android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-                )
-            }.getOrNull()
-        }
-        val count = renderer?.pageCount ?: 0
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.height(420.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            TextButton(enabled = page > 0, onClick = { page-- }) { Text("Previous") }
-            Text(if (count > 0) (page + 1).toString() + " / " + count else "PDF")
-            TextButton(enabled = page + 1 < count, onClick = { page++ }) { Text("Next") }
+            if (error == null) CircularProgressIndicator()
+            else Text(error!!, color = Color(0xFFFFB4AB))
         }
-        DisposableEffect(renderer) { onDispose { renderer?.close() } }
+        return
+    }
+
+    Column(
+        Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.wrapContentHeight())
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF101010),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.PictureAsPdf, null, tint = Color(0xFFFF8A80), modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "$" + "pageCount pages",
+                    color = Color(0xFFD5D5DA),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "Pinch to zoom",
+                    color = Color(0xFF858585),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (fullscreen) Modifier.weight(1f) else Modifier.height(520.dp)),
+            contentPadding = PaddingValues(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(pageCount) { index ->
+                PdfPage(
+                    file = file,
+                    pageIndex = index,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun PdfPage(file: File, pageIndex: Int, fullscreen: Boolean = false) {
+private fun PdfPage(
+    file: File,
+    pageIndex: Int,
+    modifier: Modifier = Modifier,
+) {
     var bitmap by remember(file, pageIndex) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var pageWidth by remember(file, pageIndex) { mutableIntStateOf(1) }
+    var pageHeight by remember(file, pageIndex) { mutableIntStateOf(1) }
+    var scale by remember(file, pageIndex) { mutableFloatStateOf(1f) }
+
     LaunchedEffect(file, pageIndex) {
         withContext(Dispatchers.IO) {
             runCatching {
-                val descriptor = android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                val descriptor = android.os.ParcelFileDescriptor.open(
+                    file, android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                )
                 val renderer = android.graphics.pdf.PdfRenderer(descriptor)
                 renderer.openPage(pageIndex).use { page ->
-                    val width = 1200
-                    val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
-                    val image = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                    pageWidth = page.width
+                    pageHeight = page.height
+                    val targetWidth = 1400
+                    val targetHeight = (targetWidth.toFloat() * page.height / page.width)
+                        .toInt().coerceAtLeast(1)
+                    val image = android.graphics.Bitmap.createBitmap(
+                        targetWidth,
+                        targetHeight,
+                        android.graphics.Bitmap.Config.ARGB_8888,
+                    )
                     image.eraseColor(android.graphics.Color.WHITE)
-                    page.render(image, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.render(
+                        image,
+                        null,
+                        null,
+                        android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY,
+                    )
                     bitmap = image
                 }
                 renderer.close()
@@ -600,29 +666,46 @@ private fun PdfPage(file: File, pageIndex: Int, fullscreen: Boolean = false) {
             }
         }
     }
-    var scale by remember(file, pageIndex) { mutableFloatStateOf(1f) }
-    var offsetX by remember(file, pageIndex) { mutableFloatStateOf(0f) }
-    var offsetY by remember(file, pageIndex) { mutableFloatStateOf(0f) }
-    bitmap?.let {
-        Box(
-            Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.height(420.dp))
-                .pointerInput(file, pageIndex) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 4f)
-                        offsetX += pan.x
-                        offsetY += pan.y
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
+
+    val image = bitmap
+    val aspect = pageHeight.toFloat() / pageWidth.toFloat()
+
+    Box(
+        modifier = modifier
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color.White)
+            .pointerInput(file, pageIndex) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(1f, 4f)
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image == null) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f / aspect),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+            }
+        } else {
             Image(
-                it.asImageBitmap(), null,
-                Modifier.fillMaxWidth().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY),
-                contentScale = ContentScale.Fit
+                bitmap = image.asImageBitmap(),
+                contentDescription = "PDF page " + (pageIndex + 1),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = 0f,
+                        translationY = 0f,
+                    ),
+                contentScale = ContentScale.FillWidth,
             )
         }
-    } ?: Box(Modifier.fillMaxWidth().then(if (fullscreen) Modifier.fillMaxHeight() else Modifier.height(420.dp)), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
     }
 }
 
